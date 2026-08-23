@@ -1,23 +1,29 @@
 import html
+import re
 import sqlite3
+import unicodedata
+from datetime import datetime
 from pathlib import Path
 
+import fitz  # PyMuPDF
 import streamlit as st
+from rapidfuzz import fuzz
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
 APP_TITLE = "Dar Makkah International"
-APP_SUBTITLE = "Library Catalogue Search System"
+APP_SUBTITLE = "Library Catalogue Management System"
 
 DATABASE_FILE = Path("library.db")
-LOGO_PATH = Path("a.jpg")
+
+MAX_RESULTS = 50
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# STREAMLIT
 # ============================================================
 
 st.set_page_config(
@@ -29,50 +35,31 @@ st.set_page_config(
 
 
 # ============================================================
-# PROFESSIONAL UI / UX
+# PROFESSIONAL LIGHT UI
 # ============================================================
 
 st.html(
     """
     <style>
 
-    /* ========================================================
-       COLOUR SYSTEM
-       ======================================================== */
-
     :root {
-        --navy-950: #07111F;
-        --navy-900: #0B1728;
-        --navy-800: #101F33;
-        --navy-700: #172A43;
-
-        --gold: #D4AF37;
-        --gold-light: #E8CC70;
-        --gold-dark: #A98518;
-
-        --white: #F8FAFC;
-        --text: #E2E8F0;
-        --muted: #94A3B8;
-
-        --border: #263B55;
-        --success: #22C55E;
+        --navy: #173B57;
+        --navy-dark: #102A43;
+        --teal: #167D8D;
+        --teal-light: #E8F6F7;
+        --gold: #B58A24;
+        --bg: #F5F7FA;
+        --card: #FFFFFF;
+        --border: #E2E8F0;
+        --text: #172033;
+        --muted: #667085;
+        --success: #238636;
+        --danger: #C62828;
     }
 
-
-    /* ========================================================
-       GLOBAL
-       ======================================================== */
-
     .stApp {
-        background:
-            radial-gradient(
-                circle at 50% -10%,
-                rgba(212, 175, 55, 0.08),
-                transparent 35%
-            ),
-            var(--navy-950);
-
-        color: var(--white);
+        background: var(--bg);
+        color: var(--text);
     }
 
     .main .block-container {
@@ -81,10 +68,7 @@ st.html(
         padding-bottom: 4rem;
     }
 
-    #MainMenu {
-        visibility: hidden;
-    }
-
+    #MainMenu,
     footer {
         visibility: hidden;
     }
@@ -93,362 +77,317 @@ st.html(
         background: transparent !important;
     }
 
-
-    /* ========================================================
-       HEADER
-       ======================================================== */
+    /* HEADER */
 
     .library-header {
-        text-align: center;
-        padding: 1.5rem 0 2rem 0;
-        margin-bottom: 1.5rem;
+        background: linear-gradient(
+            135deg,
+            #173B57 0%,
+            #214D6B 100%
+        );
 
-        border-bottom: 1px solid var(--border);
+        padding: 2rem 2rem 1.8rem 2rem;
+        border-radius: 16px;
+        margin-bottom: 1.8rem;
+
+        box-shadow:
+            0 8px 25px rgba(23, 59, 87, 0.15);
     }
 
-    .logo-wrapper {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 1rem;
-    }
-
-    .library-logo {
-        width: 170px;
-        max-height: 115px;
-        object-fit: contain;
-        border-radius: 12px;
-    }
-
-    .brand-title {
-        color: var(--white);
-        font-size: 2.45rem;
+    .main-heading {
+        color: white;
+        font-size: 2.35rem;
         font-weight: 800;
-        letter-spacing: 0.8px;
-        line-height: 1.15;
+        letter-spacing: .3px;
         margin: 0;
     }
 
-    .brand-subtitle {
-        color: var(--gold-light);
+    .sub-heading {
+        color: #D9EEF2;
         font-size: 1.05rem;
-        font-weight: 500;
-        margin-top: 0.55rem;
-        letter-spacing: 0.3px;
+        margin-top: .45rem;
     }
 
-    .brand-line {
-        width: 80px;
-        height: 3px;
-        background: var(--gold);
-        margin: 1rem auto 0 auto;
+    .header-line {
+        width: 70px;
+        height: 4px;
+        background: #D4AD45;
         border-radius: 5px;
+        margin-top: 1rem;
     }
 
+    /* SECTION */
 
-    /* ========================================================
-       WELCOME
-       ======================================================== */
-
-    .welcome-title {
-        color: var(--white);
-        font-size: 1.55rem;
+    .section-heading {
+        color: var(--navy);
+        font-size: 1.35rem;
         font-weight: 750;
-        margin-bottom: 0.35rem;
-    }
-
-    .welcome-text {
-        color: var(--muted);
-        font-size: 0.96rem;
-        margin-bottom: 1.1rem;
-    }
-
-
-    /* ========================================================
-       SEARCH AREA
-       ======================================================== */
-
-    .search-container {
-        background:
-            linear-gradient(
-                145deg,
-                rgba(23, 42, 67, 0.95),
-                rgba(16, 31, 51, 0.95)
-            );
-
-        border: 1px solid var(--border);
-        border-radius: 16px;
-
-        padding: 1.35rem;
-
-        box-shadow:
-            0 12px 35px rgba(0, 0, 0, 0.22);
-    }
-
-    .search-label {
-        color: var(--white);
-        font-size: 0.9rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-    }
-
-    .search-hint {
-        color: var(--muted);
-        font-size: 0.78rem;
-        margin-top: 0.45rem;
-    }
-
-    .stTextInput > div > div > input {
-        background: var(--navy-900) !important;
-        color: var(--white) !important;
-
-        border: 1px solid #344B68 !important;
-        border-radius: 10px !important;
-
-        min-height: 50px;
-        padding: 12px 14px !important;
-
-        font-size: 1rem !important;
-
-        transition:
-            border-color 0.2s ease,
-            box-shadow 0.2s ease;
-    }
-
-    .stTextInput > div > div > input:hover {
-        border-color: #58708E !important;
-    }
-
-    .stTextInput > div > div > input:focus {
-        border-color: var(--gold) !important;
-
-        box-shadow:
-            0 0 0 1px var(--gold),
-            0 0 15px rgba(212, 175, 55, 0.15) !important;
-    }
-
-    .stTextInput label {
-        color: var(--white) !important;
-        font-weight: 600 !important;
-    }
-
-
-    /* ========================================================
-       DASHBOARD STATISTICS
-       ======================================================== */
-
-    .stats-heading {
-        color: var(--white);
-        font-size: 1.25rem;
-        font-weight: 750;
-
-        margin-top: 1.7rem;
-        margin-bottom: 0.9rem;
-    }
-
-    .stat-card {
-        background:
-            linear-gradient(
-                145deg,
-                #111F32,
-                #0E1A2B
-            );
-
-        border: 1px solid var(--border);
-        border-radius: 14px;
-
-        padding: 1.15rem 1rem;
-
-        min-height: 115px;
-
-        box-shadow:
-            0 7px 22px rgba(0, 0, 0, 0.18);
-
-        transition:
-            transform 0.2s ease,
-            border-color 0.2s ease;
-    }
-
-    .stat-card:hover {
-        transform: translateY(-2px);
-        border-color: #49627F;
-    }
-
-    .stat-icon {
-        font-size: 1.15rem;
-        margin-bottom: 0.25rem;
-    }
-
-    .stat-number {
-        color: var(--gold-light);
-        font-size: 1.8rem;
-        font-weight: 800;
-        line-height: 1.1;
-    }
-
-    .stat-label {
-        color: var(--muted);
-        font-size: 0.78rem;
-        margin-top: 0.35rem;
-    }
-
-
-    /* ========================================================
-       QUICK SEARCH
-       ======================================================== */
-
-    .section-title {
-        color: var(--white);
-
-        font-size: 1.25rem;
-        font-weight: 750;
-
-        margin-top: 1.8rem;
-        margin-bottom: 0.75rem;
-
-        padding-left: 0.7rem;
-
-        border-left: 3px solid var(--gold);
+        margin-top: 1.5rem;
+        margin-bottom: .5rem;
     }
 
     .section-description {
         color: var(--muted);
-        font-size: 0.88rem;
-        margin-bottom: 0.9rem;
+        font-size: .92rem;
+        margin-bottom: 1rem;
     }
 
-    .quick-card {
-        background: var(--navy-800);
+    /* DASHBOARD */
+
+    .dashboard-card {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.25rem;
+        min-height: 120px;
+
+        box-shadow:
+            0 4px 15px rgba(15, 23, 42, .05);
+    }
+
+    .dashboard-number {
+        color: var(--navy);
+        font-size: 2rem;
+        font-weight: 800;
+    }
+
+    .dashboard-label {
+        color: var(--muted);
+        font-size: .85rem;
+        margin-top: .3rem;
+    }
+
+    /* SEARCH */
+
+    .stTextInput > div > div > input {
+        background: white !important;
+        color: var(--text) !important;
+
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+
+        padding: 13px !important;
+        font-size: 1rem !important;
+    }
+
+    .stTextInput > div > div > input:focus {
+        border-color: var(--teal) !important;
+
+        box-shadow:
+            0 0 0 1px var(--teal) !important;
+    }
+
+    .stTextInput label {
+        color: var(--text) !important;
+        font-weight: 650 !important;
+    }
+
+    /* UPLOAD */
+
+    .upload-card {
+        background: white;
+        border: 2px dashed #9CCDD2;
+        border-radius: 14px;
+        padding: 1.4rem;
+        margin-top: .8rem;
+
+        box-shadow:
+            0 4px 15px rgba(15, 23, 42, .04);
+    }
+
+    .upload-title {
+        color: var(--navy);
+        font-size: 1.1rem;
+        font-weight: 750;
+    }
+
+    .upload-description {
+        color: var(--muted);
+        font-size: .9rem;
+        margin-top: .25rem;
+    }
+
+    /* BOOK */
+
+    .book-card {
+        background: white;
 
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-left: 4px solid var(--teal);
 
-        padding: 0.85rem 1rem;
+        border-radius: 12px;
 
-        color: var(--text);
-        text-align: center;
+        padding: 1.2rem 1.35rem;
+        margin: .8rem 0;
 
-        font-size: 0.86rem;
+        box-shadow:
+            0 4px 15px rgba(15, 23, 42, .05);
+    }
+
+    .book-title {
+        color: var(--navy);
+        font-size: 1.25rem;
+        font-weight: 750;
+        line-height: 1.4;
+        margin-bottom: .7rem;
+    }
+
+    .book-badge {
+        display: inline-block;
+
+        background: #F1F5F9;
+        color: #475569;
+
+        border: 1px solid #E2E8F0;
+        border-radius: 6px;
+
+        padding: 4px 9px;
+        margin-right: 5px;
+
+        font-size: .78rem;
         font-weight: 600;
     }
 
+    .match-badge {
+        display: inline-block;
 
-    /* ========================================================
-       DATABASE STATUS
-       ======================================================== */
+        background: #E8F6F7;
+        color: #12616B;
 
-    .status-card {
-        background: #0E1B2C;
+        border-radius: 6px;
 
+        padding: 4px 9px;
+
+        font-size: .78rem;
+        font-weight: 650;
+    }
+
+    /* INFO */
+
+    .info-card {
+        background: white;
         border: 1px solid var(--border);
         border-radius: 12px;
-
-        padding: 1rem 1.15rem;
-
-        margin-top: 1.8rem;
+        padding: 1rem 1.2rem;
+        margin-top: 1rem;
     }
 
-    .status-title {
-        color: var(--gold-light);
-        font-size: 0.95rem;
+    .info-title {
+        color: var(--navy);
         font-weight: 750;
-
-        margin-bottom: 0.7rem;
+        margin-bottom: .5rem;
     }
 
-    .status-row {
+    .info-row {
         display: flex;
         justify-content: space-between;
-        align-items: center;
 
-        padding: 0.45rem 0;
+        border-bottom: 1px solid #EEF2F6;
+        padding: .55rem 0;
 
-        border-bottom: 1px solid rgba(38, 59, 85, 0.7);
-
-        font-size: 0.84rem;
+        font-size: .9rem;
     }
 
-    .status-row:last-child {
+    .info-row:last-child {
         border-bottom: none;
     }
 
-    .status-key {
+    .info-key {
         color: var(--muted);
     }
 
-    .status-value {
+    .info-value {
         color: var(--text);
         font-weight: 650;
     }
 
-    .status-connected {
-        color: var(--success);
+    /* BUTTONS */
+
+    .stButton > button {
+        background: var(--navy);
+        color: white;
+
+        border: none;
+        border-radius: 8px;
+
+        font-weight: 650;
+
+        padding: .55rem 1rem;
     }
 
+    .stButton > button:hover {
+        background: var(--teal);
+        color: white;
+    }
 
-    /* ========================================================
-       EMPTY SEARCH STATE
-       ======================================================== */
+    /* DATAFRAME */
 
-    .empty-state {
-        background: var(--navy-800);
-
+    [data-testid="stDataFrame"] {
         border: 1px solid var(--border);
-        border-radius: 14px;
-
-        padding: 2.5rem 1.5rem;
-
-        margin-top: 1rem;
-
-        text-align: center;
+        border-radius: 10px;
     }
 
-    .empty-icon {
-        font-size: 2.4rem;
-        margin-bottom: 0.4rem;
-    }
-
-    .empty-title {
-        color: var(--white);
-        font-size: 1.15rem;
-        font-weight: 750;
-    }
-
-    .empty-text {
-        color: var(--muted);
-        font-size: 0.88rem;
-        margin-top: 0.4rem;
-    }
-
-
-    /* ========================================================
-       MOBILE
-       ======================================================== */
-
-    @media (max-width: 768px) {
-
-        .main .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-            padding-top: 1rem;
-        }
-
-        .brand-title {
-            font-size: 1.75rem;
-        }
-
-        .brand-subtitle {
-            font-size: 0.9rem;
-        }
-
-        .library-logo {
-            width: 135px;
-        }
-
+    hr {
+        border-color: #E2E8F0 !important;
     }
 
     </style>
     """
 )
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+def safe(value):
+    return html.escape(str(value or ""))
+
+
+def normalize_text(text):
+    if not text:
+        return ""
+
+    text = str(text).strip()
+
+    text = unicodedata.normalize("NFKD", text)
+
+    text = "".join(
+        c for c in text
+        if not unicodedata.combining(c)
+    )
+
+    arabic_diacritics = re.compile(
+        r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]"
+    )
+
+    text = arabic_diacritics.sub("", text)
+
+    text = text.translate(
+        str.maketrans(
+            {
+                "أ": "ا",
+                "إ": "ا",
+                "آ": "ا",
+                "ٱ": "ا",
+                "ى": "ي",
+                "ئ": "ي",
+                "ؤ": "و",
+                "ـ": "",
+            }
+        )
+    )
+
+    text = text.lower()
+
+    text = re.sub(
+        r"[^\w\u0600-\u06FF]+",
+        " ",
+        text,
+        flags=re.UNICODE,
+    )
+
+    return " ".join(text.split())
 
 
 # ============================================================
@@ -467,12 +406,7 @@ def get_connection():
     return connection
 
 
-def initialise_database():
-    """
-    Creates the database and books table if they don't exist.
-
-    The database can therefore start completely empty.
-    """
+def initialize_database():
 
     connection = get_connection()
 
@@ -480,11 +414,38 @@ def initialise_database():
         """
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            shelf TEXT,
-            title TEXT,
-            author TEXT,
-            publisher TEXT,
-            language TEXT
+
+            title TEXT NOT NULL,
+            author TEXT DEFAULT '',
+            publisher TEXT DEFAULT '',
+            language TEXT DEFAULT '',
+            category TEXT DEFAULT '',
+            isbn TEXT DEFAULT '',
+            catalogue_number TEXT DEFAULT '',
+
+            source_pdf TEXT DEFAULT '',
+            imported_at TEXT DEFAULT '',
+
+            UNIQUE(
+                title,
+                author,
+                publisher
+            )
+        )
+        """
+    )
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS imports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            filename TEXT,
+            uploaded_at TEXT,
+            books_found INTEGER DEFAULT 0,
+            books_added INTEGER DEFAULT 0,
+            books_updated INTEGER DEFAULT 0,
+            status TEXT
         )
         """
     )
@@ -493,96 +454,471 @@ def initialise_database():
     connection.close()
 
 
-initialise_database()
+initialize_database()
 
 
 # ============================================================
-# DATABASE STATISTICS
+# PDF TEXT EXTRACTION
+# ============================================================
+
+def extract_pdf_text(uploaded_file):
+
+    pdf_bytes = uploaded_file.getvalue()
+
+    document = fitz.open(
+        stream=pdf_bytes,
+        filetype="pdf",
+    )
+
+    pages = []
+
+    for page in document:
+
+        text = page.get_text(
+            "text"
+        )
+
+        if text:
+            pages.append(text)
+
+    document.close()
+
+    return "\n".join(pages)
+
+
+# ============================================================
+# BOOK EXTRACTION
+#
+# This parser supports common catalogue labels.
+# We can make it exact once you provide your PDF.
+# ============================================================
+
+def extract_books_from_text(text):
+
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
+
+    lines = [
+        line.strip()
+        for line in text.split("\n")
+        if line.strip()
+    ]
+
+    books = []
+
+    current = {
+        "title": "",
+        "author": "",
+        "publisher": "",
+        "language": "",
+        "category": "",
+        "isbn": "",
+        "catalogue_number": "",
+    }
+
+    current_field = None
+
+    field_patterns = {
+        "title": r"^(title|book\s*title|العنوان)\s*[:\-]\s*(.*)$",
+        "author": r"^(author|authors|المؤلف|المؤلفون)\s*[:\-]\s*(.*)$",
+        "publisher": r"^(publisher|الناشر)\s*[:\-]\s*(.*)$",
+        "language": r"^(language|lang|اللغة)\s*[:\-]\s*(.*)$",
+        "category": r"^(category|subject|التصنيف|الموضوع)\s*[:\-]\s*(.*)$",
+        "isbn": r"^(isbn)\s*[:\-]?\s*(.*)$",
+        "catalogue_number": (
+            r"^(catalogue\s*(number|no)?|"
+            r"catalog\s*(number|no)?)\s*[:\-]\s*(.*)$"
+        ),
+    }
+
+    def save_current():
+
+        if not current["title"]:
+            return
+
+        book = {
+            key: value.strip()
+            for key, value in current.items()
+        }
+
+        books.append(book)
+
+    for line in lines:
+
+        matched = False
+
+        for field, pattern in field_patterns.items():
+
+            match = re.match(
+                pattern,
+                line,
+                flags=re.IGNORECASE,
+            )
+
+            if match:
+
+                current[field] = match.groups()[-1].strip()
+
+                current_field = field
+
+                matched = True
+
+                break
+
+        if matched:
+            continue
+
+        # Blank/new record indicators
+        if re.match(
+            r"^(book|record|item)\s*#?\s*\d+",
+            line,
+            flags=re.IGNORECASE,
+        ):
+
+            if current["title"]:
+                save_current()
+
+            current = {
+                "title": "",
+                "author": "",
+                "publisher": "",
+                "language": "",
+                "category": "",
+                "isbn": "",
+                "catalogue_number": "",
+            }
+
+            current_field = None
+
+            continue
+
+        # Continue previous field
+        if current_field and current[current_field]:
+
+            # Avoid making very long accidental fields.
+            if len(current[current_field]) < 500:
+
+                current[current_field] += " " + line
+
+    save_current()
+
+    return books
+
+
+# ============================================================
+# DATABASE IMPORT
+# ============================================================
+
+def import_books(
+    books,
+    filename,
+):
+
+    connection = get_connection()
+
+    added = 0
+    updated = 0
+
+    now = datetime.now().isoformat(
+        timespec="seconds"
+    )
+
+    for book in books:
+
+        title = book["title"].strip()
+
+        if not title:
+            continue
+
+        existing = connection.execute(
+            """
+            SELECT id
+            FROM books
+            WHERE title = ?
+              AND author = ?
+              AND publisher = ?
+            """,
+            (
+                title,
+                book["author"],
+                book["publisher"],
+            ),
+        ).fetchone()
+
+        if existing:
+
+            connection.execute(
+                """
+                UPDATE books
+
+                SET language = ?,
+                    category = ?,
+                    isbn = ?,
+                    catalogue_number = ?,
+                    source_pdf = ?,
+                    imported_at = ?
+
+                WHERE id = ?
+                """,
+                (
+                    book["language"],
+                    book["category"],
+                    book["isbn"],
+                    book["catalogue_number"],
+                    filename,
+                    now,
+                    existing["id"],
+                ),
+            )
+
+            updated += 1
+
+        else:
+
+            connection.execute(
+                """
+                INSERT INTO books (
+                    title,
+                    author,
+                    publisher,
+                    language,
+                    category,
+                    isbn,
+                    catalogue_number,
+                    source_pdf,
+                    imported_at
+                )
+
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    title,
+                    book["author"],
+                    book["publisher"],
+                    book["language"],
+                    book["category"],
+                    book["isbn"],
+                    book["catalogue_number"],
+                    filename,
+                    now,
+                ),
+            )
+
+            added += 1
+
+    connection.execute(
+        """
+        INSERT INTO imports (
+            filename,
+            uploaded_at,
+            books_found,
+            books_added,
+            books_updated,
+            status
+        )
+
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            filename,
+            now,
+            len(books),
+            added,
+            updated,
+            "Completed",
+        ),
+    )
+
+    connection.commit()
+    connection.close()
+
+    return added, updated
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+def search_books(query):
+
+    query_normalized = normalize_text(query)
+
+    if not query_normalized:
+        return []
+
+    connection = get_connection()
+
+    rows = connection.execute(
+        """
+        SELECT
+            id,
+            title,
+            author,
+            publisher,
+            language,
+            category,
+            isbn,
+            catalogue_number
+        FROM books
+        """
+    ).fetchall()
+
+    connection.close()
+
+    results = []
+
+    for row in rows:
+
+        title = normalize_text(
+            row["title"]
+        )
+
+        author = normalize_text(
+            row["author"]
+        )
+
+        publisher = normalize_text(
+            row["publisher"]
+        )
+
+        title_score = max(
+            fuzz.ratio(query_normalized, title),
+            fuzz.partial_ratio(query_normalized, title),
+            fuzz.token_set_ratio(
+                query_normalized,
+                title,
+            ),
+        )
+
+        author_score = max(
+            fuzz.ratio(query_normalized, author),
+            fuzz.partial_ratio(query_normalized, author),
+            fuzz.token_set_ratio(
+                query_normalized,
+                author,
+            ),
+        ) if author else 0
+
+        publisher_score = max(
+            fuzz.ratio(
+                query_normalized,
+                publisher,
+            ),
+            fuzz.partial_ratio(
+                query_normalized,
+                publisher,
+            ),
+            fuzz.token_set_ratio(
+                query_normalized,
+                publisher,
+            ),
+        ) if publisher else 0
+
+        # Exact title
+        if query_normalized == title:
+
+            score = 100
+            reason = "Exact Title Match"
+
+        # Query appears in title
+        elif query_normalized in title:
+
+            score = 98
+            reason = "Title Match"
+
+        # Strong title
+        elif title_score >= 72:
+
+            score = title_score
+            reason = "Title Match"
+
+        # Author
+        elif author_score >= 78:
+
+            score = author_score * 0.96
+            reason = "Author Match"
+
+        # Publisher
+        elif publisher_score >= 82:
+
+            score = publisher_score * 0.94
+            reason = "Publisher Match"
+
+        else:
+            continue
+
+        results.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "author": row["author"],
+                "publisher": row["publisher"],
+                "language": row["language"],
+                "category": row["category"],
+                "isbn": row["isbn"],
+                "catalogue_number": row[
+                    "catalogue_number"
+                ],
+                "score": round(score, 1),
+                "reason": reason,
+            }
+        )
+
+    results.sort(
+        key=lambda x: (
+            -x["score"],
+            normalize_text(x["title"]),
+        )
+    )
+
+    return results[:MAX_RESULTS]
+
+
+# ============================================================
+# STATISTICS
 # ============================================================
 
 def get_statistics():
 
     connection = get_connection()
 
-    total_books = connection.execute(
+    books = connection.execute(
         "SELECT COUNT(*) FROM books"
     ).fetchone()[0]
 
-    total_authors = connection.execute(
+    authors = connection.execute(
         """
         SELECT COUNT(DISTINCT author)
         FROM books
-        WHERE author IS NOT NULL
-          AND TRIM(author) != ''
+        WHERE author != ''
         """
     ).fetchone()[0]
 
-    total_publishers = connection.execute(
+    publishers = connection.execute(
         """
         SELECT COUNT(DISTINCT publisher)
         FROM books
-        WHERE publisher IS NOT NULL
-          AND TRIM(publisher) != ''
+        WHERE publisher != ''
         """
     ).fetchone()[0]
 
-    total_languages = connection.execute(
+    last_import = connection.execute(
         """
-        SELECT COUNT(DISTINCT language)
-        FROM books
-        WHERE language IS NOT NULL
-          AND TRIM(language) != ''
+        SELECT filename, uploaded_at
+        FROM imports
+        ORDER BY id DESC
+        LIMIT 1
         """
-    ).fetchone()[0]
+    ).fetchone()
 
     connection.close()
 
     return (
-        total_books,
-        total_authors,
-        total_publishers,
-        total_languages,
+        books,
+        authors,
+        publishers,
+        last_import,
     )
-
-
-(
-    total_books,
-    total_authors,
-    total_publishers,
-    total_languages,
-) = get_statistics()
-
-
-# ============================================================
-# LOGO
-# ============================================================
-
-logo_html = ""
-
-if LOGO_PATH.exists():
-
-    import base64
-
-    try:
-
-        image_bytes = LOGO_PATH.read_bytes()
-
-        encoded = base64.b64encode(
-            image_bytes
-        ).decode("utf-8")
-
-        logo_html = f"""
-        <div class="logo-wrapper">
-            <img
-                class="library-logo"
-                src="data:image/jpeg;base64,{encoded}"
-                alt="Dar Makkah International"
-            >
-        </div>
-        """
-
-    except Exception:
-        logo_html = ""
 
 
 # ============================================================
@@ -593,17 +929,15 @@ st.html(
     f"""
     <div class="library-header">
 
-        {logo_html}
-
-        <div class="brand-title">
-            {html.escape(APP_TITLE)}
+        <div class="main-heading">
+            📚 {safe(APP_TITLE)}
         </div>
 
-        <div class="brand-subtitle">
-            {html.escape(APP_SUBTITLE)}
+        <div class="sub-heading">
+            {safe(APP_SUBTITLE)}
         </div>
 
-        <div class="brand-line"></div>
+        <div class="header-line"></div>
 
     </div>
     """
@@ -611,21 +945,254 @@ st.html(
 
 
 # ============================================================
-# WELCOME
+# DASHBOARD
+# ============================================================
+
+(
+    total_books,
+    total_authors,
+    total_publishers,
+    last_import,
+) = get_statistics()
+
+
+st.html(
+    """
+    <div class="section-heading">
+        Library Overview
+    </div>
+
+    <div class="section-description">
+        Manage, import and search the Dar Makkah International
+        library catalogue.
+    </div>
+    """
+)
+
+
+metric1, metric2, metric3 = st.columns(3)
+
+
+with metric1:
+
+    st.html(
+        f"""
+        <div class="dashboard-card">
+
+            <div class="dashboard-number">
+                {total_books:,}
+            </div>
+
+            <div class="dashboard-label">
+                Total Books
+            </div>
+
+        </div>
+        """
+    )
+
+
+with metric2:
+
+    st.html(
+        f"""
+        <div class="dashboard-card">
+
+            <div class="dashboard-number">
+                {total_authors:,}
+            </div>
+
+            <div class="dashboard-label">
+                Authors
+            </div>
+
+        </div>
+        """
+    )
+
+
+with metric3:
+
+    st.html(
+        f"""
+        <div class="dashboard-card">
+
+            <div class="dashboard-number">
+                {total_publishers:,}
+            </div>
+
+            <div class="dashboard-label">
+                Publishers
+            </div>
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# PDF IMPORT
 # ============================================================
 
 st.html(
     """
-    <div class="welcome-title">
-        Welcome to the Library Catalogue
+    <div class="section-heading">
+        📄 Import Catalogue
     </div>
 
-    <div class="welcome-text">
-        Search the catalogue by book title, author,
-        publisher, or keyword.
+    <div class="section-description">
+        Upload your PDF catalogue. The system will extract the
+        book information and prepare it for import into the
+        library database.
     </div>
     """
 )
+
+
+st.html(
+    """
+    <div class="upload-card">
+
+        <div class="upload-title">
+            Upload PDF Catalogue
+        </div>
+
+        <div class="upload-description">
+            Supported format: PDF
+        </div>
+
+    </div>
+    """
+)
+
+
+uploaded_pdf = st.file_uploader(
+    "Choose your catalogue PDF",
+    type=["pdf"],
+    label_visibility="collapsed",
+)
+
+
+if uploaded_pdf:
+
+    st.success(
+        f"PDF selected: {uploaded_pdf.name}"
+    )
+
+    with st.spinner(
+        "Reading PDF and extracting catalogue data..."
+    ):
+
+        pdf_text = extract_pdf_text(
+            uploaded_pdf
+        )
+
+    if not pdf_text.strip():
+
+        st.error(
+            "No readable text was found in this PDF. "
+            "The PDF may be scanned or image-based."
+        )
+
+    else:
+
+        extracted_books = (
+            extract_books_from_text(
+                pdf_text
+            )
+        )
+
+        st.html(
+            f"""
+            <div class="info-card">
+
+                <div class="info-title">
+                    Extraction Result
+                </div>
+
+                <div class="info-row">
+                    <span class="info-key">
+                        PDF
+                    </span>
+
+                    <span class="info-value">
+                        {safe(uploaded_pdf.name)}
+                    </span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-key">
+                        Text extracted
+                    </span>
+
+                    <span class="info-value">
+                        {len(pdf_text):,} characters
+                    </span>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-key">
+                        Books detected
+                    </span>
+
+                    <span class="info-value">
+                        {len(extracted_books):,}
+                    </span>
+                </div>
+
+            </div>
+            """
+        )
+
+        if extracted_books:
+
+            st.subheader(
+                "Preview Extracted Books"
+            )
+
+            st.dataframe(
+                extracted_books,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.warning(
+                "Please check the preview before importing "
+                "the records into the database."
+            )
+
+            if st.button(
+                "📥 Import Books into Library",
+                type="primary",
+                use_container_width=True,
+            ):
+
+                with st.spinner(
+                    "Importing books into library.db..."
+                ):
+
+                    added, updated = import_books(
+                        extracted_books,
+                        uploaded_pdf.name,
+                    )
+
+                st.success(
+                    f"Import completed successfully. "
+                    f"{added} new books added and "
+                    f"{updated} existing books updated."
+                )
+
+                st.cache_data.clear()
+
+                st.rerun()
+
+        else:
+
+            st.error(
+                "The PDF text was read successfully, "
+                "but no book records could be detected. "
+                "The catalogue format needs to be configured."
+            )
 
 
 # ============================================================
@@ -634,232 +1201,143 @@ st.html(
 
 st.html(
     """
-    <div class="search-container">
-        <div class="search-label">
-            🔎 Search Catalogue
-        </div>
+    <div class="section-heading">
+        🔎 Search Library
+    </div>
+
+    <div class="section-description">
+        Search by title, author, publisher or keyword.
     </div>
     """
 )
+
 
 search_query = st.text_input(
     "Search Catalogue",
-    placeholder="Enter a book title, author, publisher or keyword...",
-    label_visibility="collapsed",
+    placeholder=(
+        "Enter book title, author, publisher or keyword..."
+    ),
 )
 
-st.caption(
-    "Supports English and Arabic catalogue searches."
-)
-
-
-# ============================================================
-# SEARCH RESULTS
-# ============================================================
 
 if search_query.strip():
 
-    # Search functionality will be connected here.
-    # We will bring your existing fuzzy/Arabic search
-    # engine into this section in the next stage.
+    results = search_books(
+        search_query
+    )
+
+    if results:
+
+        st.caption(
+            f"{len(results)} matching record(s)"
+        )
+
+        for book in results:
+
+            st.html(
+                f"""
+                <div class="book-card">
+
+                    <div class="book-title">
+                        {safe(book["title"])}
+                    </div>
+
+                    <div>
+
+                        <span class="book-badge">
+                            Author:
+                            {safe(book["author"] or "—")}
+                        </span>
+
+                        <span class="book-badge">
+                            Publisher:
+                            {safe(book["publisher"] or "—")}
+                        </span>
+
+                        <span class="book-badge">
+                            Language:
+                            {safe(book["language"] or "—")}
+                        </span>
+
+                        <span class="match-badge">
+                            {safe(book["reason"])}
+                            · {book["score"]}%
+                        </span>
+
+                    </div>
+
+                </div>
+                """
+            )
+
+            details1, details2 = st.columns(2)
+
+            with details1:
+
+                if book["category"]:
+                    st.markdown(
+                        f"**Category:** "
+                        f"{book['category']}"
+                    )
+
+                if book["isbn"]:
+                    st.markdown(
+                        f"**ISBN:** "
+                        f"{book['isbn']}"
+                    )
+
+            with details2:
+
+                if book["catalogue_number"]:
+                    st.markdown(
+                        f"**Catalogue Number:** "
+                        f"{book['catalogue_number']}"
+                    )
+
+            st.divider()
+
+    else:
+
+        st.info(
+            "No matching books found. "
+            "Try another title, author or keyword."
+        )
+
+
+# ============================================================
+# LAST IMPORT
+# ============================================================
+
+if last_import:
 
     st.html(
-        """
-        <div class="empty-state">
+        f"""
+        <div class="info-card">
 
-            <div class="empty-icon">
-                🔎
+            <div class="info-title">
+                Latest Catalogue Import
             </div>
 
-            <div class="empty-title">
-                Search engine ready
+            <div class="info-row">
+                <span class="info-key">
+                    File
+                </span>
+
+                <span class="info-value">
+                    {safe(last_import["filename"])}
+                </span>
             </div>
 
-            <div class="empty-text">
-                Your existing Arabic normalization and
-                fuzzy-search system will be connected here.
+            <div class="info-row">
+                <span class="info-key">
+                    Imported
+                </span>
+
+                <span class="info-value">
+                    {safe(last_import["uploaded_at"])}
+                </span>
             </div>
 
         </div>
         """
     )
-
-
-# ============================================================
-# DASHBOARD
-# ============================================================
-
-else:
-
-    st.html(
-        """
-        <div class="stats-heading">
-            Catalogue Overview
-        </div>
-        """
-    )
-
-    stat1, stat2, stat3, stat4 = st.columns(4)
-
-    with stat1:
-        st.html(
-            f"""
-            <div class="stat-card">
-                <div class="stat-icon">📚</div>
-                <div class="stat-number">{total_books:,}</div>
-                <div class="stat-label">Books in Catalogue</div>
-            </div>
-            """
-        )
-
-    with stat2:
-        st.html(
-            f"""
-            <div class="stat-card">
-                <div class="stat-icon">👤</div>
-                <div class="stat-number">{total_authors:,}</div>
-                <div class="stat-label">Authors</div>
-            </div>
-            """
-        )
-
-    with stat3:
-        st.html(
-            f"""
-            <div class="stat-card">
-                <div class="stat-icon">🏢</div>
-                <div class="stat-number">{total_publishers:,}</div>
-                <div class="stat-label">Publishers</div>
-            </div>
-            """
-        )
-
-    with stat4:
-        st.html(
-            f"""
-            <div class="stat-card">
-                <div class="stat-icon">🌐</div>
-                <div class="stat-number">{total_languages:,}</div>
-                <div class="stat-label">Languages</div>
-            </div>
-            """
-        )
-
-
-    # ========================================================
-    # QUICK SEARCH
-    # ========================================================
-
-    st.html(
-        """
-        <div class="section-title">
-            Quick Search
-        </div>
-
-        <div class="section-description">
-            You can search using a complete title,
-            author's name, publisher, or individual keywords.
-        </div>
-        """
-    )
-
-    q1, q2, q3, q4 = st.columns(4)
-
-    with q1:
-        st.html(
-            """
-            <div class="quick-card">
-                📖 Book Titles
-            </div>
-            """
-        )
-
-    with q2:
-        st.html(
-            """
-            <div class="quick-card">
-                👤 Authors
-            </div>
-            """
-        )
-
-    with q3:
-        st.html(
-            """
-            <div class="quick-card">
-                🏢 Publishers
-            </div>
-            """
-        )
-
-    with q4:
-        st.html(
-            """
-            <div class="quick-card">
-                🌐 Languages
-            </div>
-            """
-        )
-
-
-# ============================================================
-# CATALOGUE STATUS
-# ============================================================
-
-database_status = (
-    "Ready"
-    if DATABASE_FILE.exists()
-    else "Unavailable"
-)
-
-st.html(
-    f"""
-    <div class="status-card">
-
-        <div class="status-title">
-            Catalogue System Status
-        </div>
-
-        <div class="status-row">
-            <span class="status-key">
-                Database
-            </span>
-
-            <span class="status-value status-connected">
-                ● {html.escape(database_status)}
-            </span>
-        </div>
-
-        <div class="status-row">
-            <span class="status-key">
-                Database File
-            </span>
-
-            <span class="status-value">
-                {html.escape(DATABASE_FILE.name)}
-            </span>
-        </div>
-
-        <div class="status-row">
-            <span class="status-key">
-                Books Indexed
-            </span>
-
-            <span class="status-value">
-                {total_books:,}
-            </span>
-        </div>
-
-        <div class="status-row">
-            <span class="status-key">
-                Search
-            </span>
-
-            <span class="status-value">
-                Arabic + English
-            </span>
-        </div>
-
-    </div>
-    """
-)
