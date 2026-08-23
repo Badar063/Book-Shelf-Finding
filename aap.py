@@ -15,13 +15,15 @@ from rapidfuzz import fuzz
 APP_TITLE = "Dar Makkah International"
 APP_SUBTITLE = "Library Catalogue Search System"
 
+# Always use the same folder as app.py
 DATABASE_FILE = Path(__file__).resolve().parent / "library.db"
 
 MAX_RESULTS = 100
 
-MIN_TITLE_SCORE = 72
-MIN_AUTHOR_SCORE = 78
-MIN_PUBLISHER_SCORE = 82
+# Much stricter search settings
+MIN_TITLE_SCORE = 82
+MIN_AUTHOR_SCORE = 88
+MIN_PUBLISHER_SCORE = 92
 
 
 # ============================================================
@@ -46,14 +48,24 @@ def get_connection():
         timeout=30,
         check_same_thread=False,
     )
+
     connection.row_factory = sqlite3.Row
+
     return connection
 
 
 def create_database():
+
     connection = get_connection()
 
     try:
+
+        # IMPORTANT:
+        # Shelf No. has been added.
+        #
+        # If an old database already exists without shelf_no,
+        # we automatically add the column.
+
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS books (
@@ -61,14 +73,35 @@ def create_database():
                 title TEXT NOT NULL,
                 author TEXT DEFAULT '',
                 publisher TEXT DEFAULT '',
-                language TEXT DEFAULT ''
+                language TEXT DEFAULT '',
+                shelf_no TEXT DEFAULT ''
             )
             """
         )
 
+        # Check existing columns
+        columns = connection.execute(
+            "PRAGMA table_info(books)"
+        ).fetchall()
+
+        column_names = {
+            row["name"]
+            for row in columns
+        }
+
+        if "shelf_no" not in column_names:
+
+            connection.execute(
+                """
+                ALTER TABLE books
+                ADD COLUMN shelf_no TEXT DEFAULT ''
+                """
+            )
+
         connection.commit()
 
     finally:
+
         connection.close()
 
 
@@ -85,6 +118,7 @@ def load_books():
     connection = get_connection()
 
     try:
+
         rows = connection.execute(
             """
             SELECT
@@ -92,7 +126,8 @@ def load_books():
                 title,
                 author,
                 publisher,
-                language
+                language,
+                shelf_no
             FROM books
             ORDER BY title COLLATE NOCASE
             """
@@ -105,16 +140,18 @@ def load_books():
                 row["author"] or "",
                 row["publisher"] or "",
                 row["language"] or "",
+                row["shelf_no"] or "",
             )
             for row in rows
         ]
 
     finally:
+
         connection.close()
 
 
 # ============================================================
-# DELETE DATABASE CONTENT
+# DELETE ALL CATALOGUE DATA
 # ============================================================
 
 def delete_all_books():
@@ -122,20 +159,33 @@ def delete_all_books():
     connection = get_connection()
 
     try:
-        connection.execute("DELETE FROM books")
 
-        # Reset SQLite AUTOINCREMENT counter
         connection.execute(
-            "DELETE FROM sqlite_sequence WHERE name='books'"
+            "DELETE FROM books"
         )
+
+        # Reset ID counter
+        try:
+
+            connection.execute(
+                """
+                DELETE FROM sqlite_sequence
+                WHERE name = 'books'
+                """
+            )
+
+        except sqlite3.OperationalError:
+            pass
 
         connection.commit()
 
     except Exception:
+
         connection.rollback()
         raise
 
     finally:
+
         connection.close()
 
     load_books.clear()
@@ -151,8 +201,33 @@ def replace_database(dataframe):
 
     try:
 
-        # Remove old catalogue
-        connection.execute("DELETE FROM books")
+        # ----------------------------------------------------
+        # DELETE OLD CATALOGUE
+        # ----------------------------------------------------
+
+        connection.execute(
+            "DELETE FROM books"
+        )
+
+        # ----------------------------------------------------
+        # RESET ID
+        # ----------------------------------------------------
+
+        try:
+
+            connection.execute(
+                """
+                DELETE FROM sqlite_sequence
+                WHERE name = 'books'
+                """
+            )
+
+        except sqlite3.OperationalError:
+            pass
+
+        # ----------------------------------------------------
+        # INSERT NEW CATALOGUE
+        # ----------------------------------------------------
 
         records = []
 
@@ -164,6 +239,7 @@ def replace_database(dataframe):
                     str(row["author"]).strip(),
                     str(row["publisher"]).strip(),
                     str(row["language"]).strip(),
+                    str(row["shelf_no"]).strip(),
                 )
             )
 
@@ -174,9 +250,10 @@ def replace_database(dataframe):
                 title,
                 author,
                 publisher,
-                language
+                language,
+                shelf_no
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             records,
         )
@@ -184,10 +261,12 @@ def replace_database(dataframe):
         connection.commit()
 
     except Exception:
+
         connection.rollback()
         raise
 
     finally:
+
         connection.close()
 
     load_books.clear()
@@ -200,6 +279,7 @@ def replace_database(dataframe):
 ARABIC_DIACRITICS = re.compile(
     r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]"
 )
+
 
 ARABIC_TRANSLATION = str.maketrans(
     {
@@ -229,7 +309,10 @@ def normalize_text(text):
     if not text:
         return ""
 
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize(
+        "NFKD",
+        text,
+    )
 
     text = "".join(
         char
@@ -237,9 +320,14 @@ def normalize_text(text):
         if not unicodedata.combining(char)
     )
 
-    text = ARABIC_DIACRITICS.sub("", text)
+    text = ARABIC_DIACRITICS.sub(
+        "",
+        text,
+    )
 
-    text = text.translate(ARABIC_TRANSLATION)
+    text = text.translate(
+        ARABIC_TRANSLATION
+    )
 
     text = text.lower()
 
@@ -258,18 +346,24 @@ def normalize_text(text):
         flags=re.UNICODE,
     )
 
-    return " ".join(text.split())
+    return " ".join(
+        text.split()
+    )
 
 
 def tokenize(text):
 
     value = normalize_text(text)
 
-    return value.split() if value else []
+    return (
+        value.split()
+        if value
+        else []
+    )
 
 
 # ============================================================
-# SEARCH
+# SEARCH HELPERS
 # ============================================================
 
 def phrase_contains(query, field):
@@ -278,14 +372,18 @@ def phrase_contains(query, field):
     field = normalize_text(field)
 
     return bool(
-        query and field and query in field
+        query
+        and field
+        and query in field
     )
 
 
 def exact_token_match(query, field):
 
     query_tokens = tokenize(query)
-    field_tokens = set(tokenize(field))
+    field_tokens = set(
+        tokenize(field)
+    )
 
     if not query_tokens or not field_tokens:
         return False
@@ -307,16 +405,22 @@ def fuzzy_score(query, field):
     if q == f:
         return 100
 
-    if q in f:
-        return 98
+    # For very short searches we do NOT use
+    # partial_ratio because it creates too many
+    # irrelevant matches.
+    if len(q) < 4:
+        return fuzz.ratio(q, f)
 
     return max(
         fuzz.ratio(q, f),
-        fuzz.partial_ratio(q, f),
         fuzz.token_set_ratio(q, f),
         fuzz.WRatio(q, f),
     )
 
+
+# ============================================================
+# STRICT SEARCH
+# ============================================================
 
 def field_match(
     query,
@@ -330,52 +434,214 @@ def field_match(
     if not q:
         return None, 0
 
-    # Exact title
-    if q == normalize_text(title):
-        return "Exact Title Match", 100
+    title_n = normalize_text(title)
+    author_n = normalize_text(author)
+    publisher_n = normalize_text(publisher)
 
-    # Title phrase
-    if phrase_contains(q, title):
-        return "Title Match", 98
+    query_tokens = tokenize(q)
 
-    # Title keywords
-    if exact_token_match(q, title):
-        return "Title Keyword Match", 96
+    # ========================================================
+    # 1. EXACT TITLE
+    # ========================================================
 
-    # Fuzzy title
-    score = fuzzy_score(q, title)
+    if q == title_n:
 
-    if score >= MIN_TITLE_SCORE:
-        return "Strong Title Match", score
+        return (
+            "Exact Title Match",
+            100,
+        )
 
-    # Author
-    if phrase_contains(q, author):
-        return "Author Match", 94
+    # ========================================================
+    # 2. TITLE PHRASE
+    # ========================================================
 
-    if exact_token_match(q, author):
-        return "Author Keyword Match", 92
+    if phrase_contains(q, title_n):
 
-    score = fuzzy_score(q, author)
+        return (
+            "Title Match",
+            98,
+        )
 
-    if score >= MIN_AUTHOR_SCORE:
-        return "Author Match", score * 0.96
+    # ========================================================
+    # 3. TITLE WORD MATCH
+    #
+    # All query words must appear in title.
+    # ========================================================
 
-    # Publisher
-    if phrase_contains(q, publisher):
-        return "Publisher Match", 91
+    if query_tokens:
 
-    if exact_token_match(q, publisher):
-        return "Publisher Keyword Match", 89
+        title_tokens = set(
+            tokenize(title_n)
+        )
 
-    score = fuzzy_score(q, publisher)
+        if all(
+            token in title_tokens
+            for token in query_tokens
+        ):
 
-    if score >= MIN_PUBLISHER_SCORE:
-        return "Publisher Match", score * 0.94
+            return (
+                "Title Keyword Match",
+                96,
+            )
+
+    # ========================================================
+    # 4. FUZZY TITLE
+    #
+    # Only allow fuzzy title matches for queries
+    # of 4+ characters.
+    # ========================================================
+
+    if len(q) >= 4:
+
+        score = fuzz.WRatio(
+            q,
+            title_n,
+        )
+
+        # Long queries need stronger matching.
+        if len(q) >= 8:
+
+            threshold = 85
+
+        else:
+
+            threshold = MIN_TITLE_SCORE
+
+        if score >= threshold:
+
+            return (
+                "Strong Title Match",
+                score,
+            )
+
+    # ========================================================
+    # 5. EXACT AUTHOR PHRASE
+    # ========================================================
+
+    if author_n:
+
+        if q == author_n:
+
+            return (
+                "Exact Author Match",
+                100,
+            )
+
+        if phrase_contains(
+            q,
+            author_n,
+        ):
+
+            return (
+                "Author Match",
+                94,
+            )
+
+        author_tokens = set(
+            tokenize(author_n)
+        )
+
+        if query_tokens and all(
+            token in author_tokens
+            for token in query_tokens
+        ):
+
+            return (
+                "Author Keyword Match",
+                92,
+            )
+
+    # ========================================================
+    # 6. FUZZY AUTHOR
+    # ========================================================
+
+    if author_n and len(q) >= 5:
+
+        score = fuzz.WRatio(
+            q,
+            author_n,
+        )
+
+        if score >= MIN_AUTHOR_SCORE:
+
+            return (
+                "Author Match",
+                score,
+            )
+
+    # ========================================================
+    # 7. PUBLISHER
+    #
+    # Publisher fuzzy matching is intentionally strict.
+    # ========================================================
+
+    if publisher_n:
+
+        if q == publisher_n:
+
+            return (
+                "Exact Publisher Match",
+                100,
+            )
+
+        if phrase_contains(
+            q,
+            publisher_n,
+        ):
+
+            return (
+                "Publisher Match",
+                91,
+            )
+
+        publisher_tokens = set(
+            tokenize(publisher_n)
+        )
+
+        if query_tokens and all(
+            token in publisher_tokens
+            for token in query_tokens
+        ):
+
+            return (
+                "Publisher Keyword Match",
+                89,
+            )
+
+    # ========================================================
+    # 8. FUZZY PUBLISHER
+    # ========================================================
+
+    if publisher_n and len(q) >= 6:
+
+        score = fuzz.WRatio(
+            q,
+            publisher_n,
+        )
+
+        if score >= MIN_PUBLISHER_SCORE:
+
+            return (
+                "Publisher Match",
+                score,
+            )
 
     return None, 0
 
 
+# ============================================================
+# SEARCH BOOKS
+# ============================================================
+
 def search_books(query, rows):
+
+    query_normalized = normalize_text(
+        query
+    )
+
+    if not query_normalized:
+
+        return []
 
     results = []
 
@@ -387,16 +653,18 @@ def search_books(query, rows):
             author,
             publisher,
             language,
+            shelf_no,
         ) = row
 
         reason, score = field_match(
-            query,
+            query_normalized,
             title,
             author,
             publisher,
         )
 
-        if not reason:
+        if reason is None:
+
             continue
 
         results.append(
@@ -406,20 +674,37 @@ def search_books(query, rows):
                 "author": author,
                 "publisher": publisher,
                 "language": language,
-                "score": round(score, 1),
+                "shelf_no": shelf_no,
+                "score": round(
+                    score,
+                    1,
+                ),
                 "reason": reason,
             }
         )
 
+    # Best matches first
     priority = {
+
         "Exact Title Match": 0,
+
         "Title Match": 1,
+
         "Title Keyword Match": 2,
+
         "Strong Title Match": 3,
-        "Author Match": 4,
-        "Author Keyword Match": 5,
-        "Publisher Match": 6,
-        "Publisher Keyword Match": 7,
+
+        "Exact Author Match": 4,
+
+        "Author Match": 5,
+
+        "Author Keyword Match": 6,
+
+        "Exact Publisher Match": 7,
+
+        "Publisher Match": 8,
+
+        "Publisher Keyword Match": 9,
     }
 
     results.sort(
@@ -429,18 +714,25 @@ def search_books(query, rows):
                 99,
             ),
             -item["score"],
-            normalize_text(item["title"]),
+            normalize_text(
+                item["title"]
+            ),
         )
     )
 
-    return results[:MAX_RESULTS]
+    return results[
+        :MAX_RESULTS
+    ]
 
 
 # ============================================================
-# EXCEL
+# EXCEL COLUMN FINDER
 # ============================================================
 
-def find_column(columns, names):
+def find_column(
+    columns,
+    names,
+):
 
     normalized_columns = {
         normalize_text(column): column
@@ -449,9 +741,15 @@ def find_column(columns, names):
 
     for name in names:
 
-        normalized_name = normalize_text(name)
+        normalized_name = normalize_text(
+            name
+        )
 
-        if normalized_name in normalized_columns:
+        if (
+            normalized_name
+            in normalized_columns
+        ):
+
             return normalized_columns[
                 normalized_name
             ]
@@ -459,7 +757,13 @@ def find_column(columns, names):
     return None
 
 
-def process_excel(uploaded_file):
+# ============================================================
+# PROCESS EXCEL
+# ============================================================
+
+def process_excel(
+    uploaded_file,
+):
 
     try:
 
@@ -469,17 +773,26 @@ def process_excel(uploaded_file):
 
     except Exception as exc:
 
-        return None, (
-            f"Unable to read Excel file: {exc}"
+        return (
+            None,
+            f"Unable to read Excel file: {exc}",
         )
 
     if dataframe.empty:
-        return None, "The Excel file is empty."
+
+        return (
+            None,
+            "The Excel file is empty.",
+        )
 
     dataframe = dataframe.dropna(
         axis=1,
         how="all",
     )
+
+    # ========================================================
+    # TITLE
+    # ========================================================
 
     title_column = find_column(
         dataframe.columns,
@@ -495,6 +808,10 @@ def process_excel(uploaded_file):
         ],
     )
 
+    # ========================================================
+    # AUTHOR
+    # ========================================================
+
     author_column = find_column(
         dataframe.columns,
         [
@@ -505,6 +822,10 @@ def process_excel(uploaded_file):
             "اسم المؤلف",
         ],
     )
+
+    # ========================================================
+    # PUBLISHER
+    # ========================================================
 
     publisher_column = find_column(
         dataframe.columns,
@@ -517,6 +838,10 @@ def process_excel(uploaded_file):
         ],
     )
 
+    # ========================================================
+    # LANGUAGE
+    # ========================================================
+
     language_column = find_column(
         dataframe.columns,
         [
@@ -526,12 +851,52 @@ def process_excel(uploaded_file):
         ],
     )
 
+    # ========================================================
+    # SHELF NUMBER
+    # ========================================================
+
+    shelf_column = find_column(
+        dataframe.columns,
+        [
+            "shelf no",
+            "shelf no.",
+            "shelf number",
+            "shelf",
+            "shelf_no",
+            "shelfno",
+            "location",
+            "call number",
+            "call no",
+            "call no.",
+            "رف",
+            "رقم الرف",
+            "رقم الرفوف",
+            "موقع الرف",
+        ],
+    )
+
     if title_column is None:
 
-        return None, (
+        return (
+            None,
             "Could not find a Title column. "
-            "Please name it 'Title' or 'Book Title'."
+            "Please make sure your Excel file has "
+            "a column named Title or Book Title.",
         )
+
+    if shelf_column is None:
+
+        return (
+            None,
+            "Could not find the Shelf No. column. "
+            "Please name it 'Shelf No', "
+            "'Shelf No.', 'Shelf Number', "
+            "'Shelf' or 'رقم الرف'.",
+        )
+
+    # ========================================================
+    # CLEAN DATA
+    # ========================================================
 
     clean = pd.DataFrame()
 
@@ -581,18 +946,42 @@ def process_excel(uploaded_file):
 
         clean["language"] = ""
 
-    # Remove empty titles
+    # ========================================================
+    # SHELF NUMBER
+    # ========================================================
+
+    clean["shelf_no"] = (
+        dataframe[shelf_column]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    # ========================================================
+    # REMOVE EMPTY TITLES
+    # ========================================================
+
     clean = clean[
         clean["title"].str.strip() != ""
     ]
 
-    # Remove duplicates
+    # ========================================================
+    # REMOVE DUPLICATES
+    #
+    # Include shelf number because two physical copies
+    # can legitimately have different shelf locations.
+    # ========================================================
+
     clean["_key"] = (
         clean["title"].map(normalize_text)
         + "|"
         + clean["author"].map(normalize_text)
         + "|"
         + clean["publisher"].map(normalize_text)
+        + "|"
+        + clean["language"].map(normalize_text)
+        + "|"
+        + clean["shelf_no"].map(normalize_text)
     )
 
     clean = clean.drop_duplicates(
@@ -603,11 +992,15 @@ def process_excel(uploaded_file):
         columns=["_key"]
     )
 
-    clean = clean.reset_index(drop=True)
+    clean = clean.reset_index(
+        drop=True
+    )
 
     if clean.empty:
-        return None, (
-            "No valid book records were found."
+
+        return (
+            None,
+            "No valid book records were found.",
         )
 
     return clean, None
@@ -639,14 +1032,22 @@ languages = {
     if normalize_text(row[4])
 }
 
+shelves = {
+    normalize_text(row[5])
+    for row in rows
+    if normalize_text(row[5])
+}
+
 
 # ============================================================
-# HERO
+# HEADER
 # ============================================================
 
 st.title(APP_TITLE)
 
-st.caption(APP_SUBTITLE)
+st.caption(
+    APP_SUBTITLE
+)
 
 st.divider()
 
@@ -664,23 +1065,24 @@ search_tab, management_tab = st.tabs(
 
 
 # ============================================================
-# SEARCH
+# SEARCH TAB
 # ============================================================
 
 with search_tab:
 
-    st.header("Search the Library Catalogue")
+    st.header(
+        "Search the Library Catalogue"
+    )
 
     st.write(
-        "Search by title, author, publisher or keyword. "
+        "Search by book title, author or publisher. "
         "Arabic and English text are supported."
     )
 
     query = st.text_input(
         "Catalogue Search",
         placeholder=(
-            "Enter book title, author, "
-            "publisher or keyword..."
+            "Enter book title, author or publisher..."
         ),
     )
 
@@ -699,32 +1101,62 @@ with search_tab:
 
             for book in results:
 
-                # IMPORTANT:
-                # No HTML is used here.
-                # Streamlit displays the text safely.
-
                 with st.container(
                     border=True
                 ):
 
+                    # -------------------------------
+                    # TITLE
+                    # -------------------------------
+
                     st.subheader(
                         str(book["title"])
                     )
+
+                    # -------------------------------
+                    # SHELF NUMBER
+                    # -------------------------------
+
+                    shelf_value = (
+                        book["shelf_no"]
+                        or "Not specified"
+                    )
+
+                    st.write(
+                        f"📍 **Shelf No.:** "
+                        f"{shelf_value}"
+                    )
+
+                    # -------------------------------
+                    # AUTHOR
+                    # -------------------------------
 
                     st.write(
                         f"**Author:** "
                         f"{book['author'] or '—'}"
                     )
 
+                    # -------------------------------
+                    # PUBLISHER
+                    # -------------------------------
+
                     st.write(
                         f"**Publisher:** "
                         f"{book['publisher'] or '—'}"
                     )
 
+                    # -------------------------------
+                    # LANGUAGE
+                    # -------------------------------
+
                     st.write(
                         f"**Language:** "
                         f"{book['language'] or '—'}"
                     )
+
+                    # -------------------------------
+                    # MATCH
+                    # -------------------------------
 
                     st.caption(
                         f"Match: "
@@ -736,64 +1168,83 @@ with search_tab:
 
             st.info(
                 "No matching books found. "
-                "Try another title, author, "
-                "publisher or keyword."
+                "Try the complete book title, "
+                "author name or publisher."
             )
 
     else:
 
-        st.subheader("Catalogue Overview")
+        st.subheader(
+            "Catalogue Overview"
+        )
 
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
 
         with c1:
+
             st.metric(
                 "Books",
                 f"{total_books:,}",
             )
 
         with c2:
+
             st.metric(
                 "Authors",
                 f"{len(authors):,}",
             )
 
         with c3:
+
             st.metric(
                 "Publishers",
                 f"{len(publishers):,}",
             )
 
         with c4:
+
             st.metric(
                 "Languages",
                 f"{len(languages):,}",
             )
 
+        with c5:
+
+            st.metric(
+                "Shelf Locations",
+                f"{len(shelves):,}",
+            )
+
 
 # ============================================================
-# MANAGEMENT
+# MANAGEMENT TAB
 # ============================================================
 
 with management_tab:
 
-    st.header("Catalogue Management")
+    st.header(
+        "Catalogue Management"
+    )
 
     st.write(
         "Upload your monthly Excel catalogue. "
-        "Importing a new catalogue automatically "
-        "replaces the previous catalogue."
+        "The new Excel file completely replaces "
+        "the existing catalogue."
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # DELETE
-    # --------------------------------------------------------
+    # ========================================================
 
-    st.subheader("🗑️ Delete Current Catalogue")
+    st.subheader(
+        "🗑️ Delete Current Catalogue"
+    )
 
     st.warning(
-        "This permanently removes all books currently "
-        "stored in library.db."
+        "This will permanently remove every book "
+        "currently stored in library.db. "
+        "The database itself will remain available "
+        "so you can import a new catalogue."
     )
 
     delete_confirmation = st.checkbox(
@@ -811,7 +1262,8 @@ with management_tab:
             delete_all_books()
 
             st.success(
-                "All catalogue data has been deleted."
+                "All catalogue data has been deleted. "
+                "The database is now empty."
             )
 
             st.rerun()
@@ -824,18 +1276,25 @@ with management_tab:
 
     st.divider()
 
-    # --------------------------------------------------------
-    # EXCEL
-    # --------------------------------------------------------
+    # ========================================================
+    # EXCEL UPLOAD
+    # ========================================================
 
     st.subheader(
         "📊 Upload Monthly Excel Catalogue"
     )
 
     st.write(
-        "Required column: **Title**. "
-        "Optional columns: **Author**, "
-        "**Publisher**, **Language**."
+        "Required columns:"
+    )
+
+    st.info(
+        "Title + Shelf No."
+    )
+
+    st.write(
+        "Optional columns: "
+        "Author, Publisher and Language."
     )
 
     uploaded_file = st.file_uploader(
@@ -844,6 +1303,9 @@ with management_tab:
             "xlsx",
             "xls",
         ],
+        help=(
+            "Upload the monthly library catalogue."
+        ),
     )
 
     if uploaded_file:
@@ -863,7 +1325,13 @@ with management_tab:
                 "valid book records detected."
             )
 
-            st.subheader("Preview")
+            # ------------------------------------------------
+            # DETECTED COLUMNS
+            # ------------------------------------------------
+
+            st.subheader(
+                "Imported Catalogue"
+            )
 
             st.dataframe(
                 dataframe.head(20),
@@ -871,7 +1339,11 @@ with management_tab:
                 hide_index=True,
             )
 
-            c1, c2, c3 = st.columns(3)
+            # ------------------------------------------------
+            # METRICS
+            # ------------------------------------------------
+
+            c1, c2, c3, c4 = st.columns(4)
 
             with c1:
 
@@ -908,14 +1380,37 @@ with management_tab:
                     f"{publisher_count:,}",
                 )
 
+            with c4:
+
+                shelf_count = (
+                    dataframe["shelf_no"]
+                    .replace("", pd.NA)
+                    .dropna()
+                    .nunique()
+                )
+
+                st.metric(
+                    "Shelf Locations",
+                    f"{shelf_count:,}",
+                )
+
+            # ------------------------------------------------
+            # REPLACE WARNING
+            # ------------------------------------------------
+
             st.warning(
-                "This will replace the existing "
+                f"This will replace the existing "
                 f"{total_books:,} books with the "
-                f"{len(dataframe):,} books in this Excel file."
+                f"{len(dataframe):,} books from this "
+                "Excel file."
             )
 
+            # ------------------------------------------------
+            # IMPORT
+            # ------------------------------------------------
+
             if st.button(
-                "💾 Replace Catalogue",
+                "💾 Replace Catalogue With This Excel File",
                 type="primary",
                 use_container_width=True,
             ):
@@ -927,7 +1422,9 @@ with management_tab:
                     )
 
                     st.success(
-                        "Catalogue successfully replaced."
+                        "Catalogue successfully replaced. "
+                        "The old catalogue has been removed "
+                        "and the new Excel catalogue is now active."
                     )
 
                     st.rerun()
@@ -945,22 +1442,51 @@ with management_tab:
 
 st.divider()
 
-st.subheader("System Information")
+st.subheader(
+    "System Information"
+)
 
 info1, info2, info3, info4 = st.columns(4)
 
 with info1:
-    st.write("**Database**")
-    st.write(DATABASE_FILE.name)
+
+    st.write(
+        "**Database**"
+    )
+
+    st.write(
+        DATABASE_FILE.name
+    )
+
 
 with info2:
-    st.write("**Database Location**")
-    st.code(str(DATABASE_FILE))
+
+    st.write(
+        "**Database Location**"
+    )
+
+    st.code(
+        str(DATABASE_FILE)
+    )
+
 
 with info3:
-    st.write("**Books Indexed**")
-    st.write(f"{total_books:,}")
+
+    st.write(
+        "**Books Indexed**"
+    )
+
+    st.write(
+        f"{total_books:,}"
+    )
+
 
 with info4:
-    st.write("**Search Engine**")
-    st.write("Exact + Token + Fuzzy")
+
+    st.write(
+        "**Search Engine**"
+    )
+
+    st.write(
+        "Exact + Strict Fuzzy"
+    )
