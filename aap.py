@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import html
 import unicodedata
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from rapidfuzz import fuzz
 APP_TITLE = "Dar Makkah International"
 APP_SUBTITLE = "Library Catalogue Search System"
 
-DATABASE_FILE = Path("library.db")
+# Keep database beside this Python file.
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_FILE = BASE_DIR / "library.db"
 
 MAX_RESULTS = 100
 
@@ -44,8 +47,6 @@ st.markdown(
     """
 <style>
 
-/* ---------- PAGE ---------- */
-
 .stApp {
     background: #f5f7fa;
     color: #172033;
@@ -65,9 +66,6 @@ footer {
 header {
     background: transparent !important;
 }
-
-
-/* ---------- HERO ---------- */
 
 .hero {
     background: linear-gradient(135deg, #123b5d, #1b587d);
@@ -98,9 +96,6 @@ header {
     margin-top: 18px;
 }
 
-
-/* ---------- HEADINGS ---------- */
-
 .section-title {
     color: #123b5d;
     font-size: 24px;
@@ -115,9 +110,6 @@ header {
     margin-bottom: 18px;
 }
 
-
-/* ---------- SEARCH ---------- */
-
 .stTextInput input {
     background: #ffffff !important;
     color: #172033 !important;
@@ -131,9 +123,6 @@ header {
     border-color: #123b5d !important;
     box-shadow: 0 0 0 1px #123b5d !important;
 }
-
-
-/* ---------- METRICS ---------- */
 
 .metric-card {
     background: #ffffff;
@@ -155,9 +144,6 @@ header {
     font-size: 14px;
     margin-top: 4px;
 }
-
-
-/* ---------- BOOK ---------- */
 
 .book-card {
     background: #ffffff;
@@ -200,9 +186,6 @@ header {
     font-weight: 650;
 }
 
-
-/* ---------- IMPORT ---------- */
-
 .import-card {
     background: #ffffff;
     border: 1px solid #e4e7ec;
@@ -223,9 +206,6 @@ header {
     font-size: 14px;
     margin-top: 6px;
 }
-
-
-/* ---------- EMPTY ---------- */
 
 .empty-card {
     background: #ffffff;
@@ -251,9 +231,6 @@ header {
     color: #667085;
     margin-top: 6px;
 }
-
-
-/* ---------- SYSTEM ---------- */
 
 .system-card {
     background: #123b5d;
@@ -289,9 +266,6 @@ header {
     font-weight: 600;
 }
 
-
-/* ---------- TABS ---------- */
-
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px;
 }
@@ -304,13 +278,30 @@ header {
     font-weight: 650;
 }
 
-
-/* ---------- BUTTON ---------- */
-
 .stButton > button {
     border-radius: 9px;
     min-height: 45px;
     font-weight: 650;
+}
+
+.danger-box {
+    background: #fff4f4;
+    border: 1px solid #f1b5b5;
+    border-radius: 12px;
+    padding: 18px;
+    margin-top: 20px;
+    margin-bottom: 15px;
+}
+
+.danger-title {
+    color: #a61b1b;
+    font-weight: 750;
+    font-size: 18px;
+}
+
+.danger-text {
+    color: #6b3030;
+    margin-top: 6px;
 }
 
 </style>
@@ -336,23 +327,25 @@ def get_connection():
 
 
 def create_database():
-
     connection = get_connection()
 
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS books (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            author TEXT DEFAULT '',
-            publisher TEXT DEFAULT '',
-            language TEXT DEFAULT ''
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT DEFAULT '',
+                publisher TEXT DEFAULT '',
+                language TEXT DEFAULT ''
+            )
+            """
         )
-        """
-    )
 
-    connection.commit()
-    connection.close()
+        connection.commit()
+
+    finally:
+        connection.close()
 
 
 create_database()
@@ -367,31 +360,95 @@ def load_books():
 
     connection = get_connection()
 
-    rows = connection.execute(
-        """
-        SELECT
-            id,
-            title,
-            author,
-            publisher,
-            language
-        FROM books
-        ORDER BY title COLLATE NOCASE
-        """
-    ).fetchall()
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                title,
+                author,
+                publisher,
+                language
+            FROM books
+            ORDER BY title COLLATE NOCASE
+            """
+        ).fetchall()
 
-    connection.close()
+        return [
+            (
+                row["id"],
+                row["title"] or "",
+                row["author"] or "",
+                row["publisher"] or "",
+                row["language"] or "",
+            )
+            for row in rows
+        ]
 
-    return [
-        (
-            row["id"],
-            row["title"] or "",
-            row["author"] or "",
-            row["publisher"] or "",
-            row["language"] or "",
-        )
-        for row in rows
-    ]
+    finally:
+        connection.close()
+
+
+# ============================================================
+# HTML CLEANING
+# ============================================================
+
+def clean_excel_text(value):
+    """
+    Remove HTML tags and decode HTML entities from Excel cells.
+
+    Example:
+        <p>Introduction to Python</p>
+    becomes:
+        Introduction to Python
+    """
+
+    if value is None:
+        return ""
+
+    if pd.isna(value):
+        return ""
+
+    text = str(value)
+
+    # Decode things such as:
+    # &amp; -> &
+    # &quot; -> "
+    text = html.unescape(text)
+
+    # Convert common HTML line breaks
+    text = re.sub(
+        r"<\s*br\s*/?\s*>",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"</\s*(p|div|li|tr|h[1-6])\s*>",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove remaining HTML tags
+    text = re.sub(
+        r"<[^>]+>",
+        " ",
+        text,
+    )
+
+    # Remove any leftover HTML entities
+    text = html.unescape(text)
+
+    # Normalize whitespace
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    )
+
+    return text.strip()
 
 
 # ============================================================
@@ -425,12 +482,15 @@ def normalize_text(text):
     if text is None:
         return ""
 
-    text = str(text).strip()
+    text = clean_excel_text(text)
 
     if not text:
         return ""
 
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize(
+        "NFKD",
+        text,
+    )
 
     text = "".join(
         char
@@ -438,9 +498,14 @@ def normalize_text(text):
         if not unicodedata.combining(char)
     )
 
-    text = ARABIC_DIACRITICS.sub("", text)
+    text = ARABIC_DIACRITICS.sub(
+        "",
+        text,
+    )
 
-    text = text.translate(ARABIC_TRANSLATION)
+    text = text.translate(
+        ARABIC_TRANSLATION
+    )
 
     text = text.lower()
 
@@ -478,13 +543,19 @@ def phrase_contains(query, field):
     query = normalize_text(query)
     field = normalize_text(field)
 
-    return bool(query and field and query in field)
+    return bool(
+        query
+        and field
+        and query in field
+    )
 
 
 def exact_token_match(query, field):
 
     query_tokens = tokenize(query)
-    field_tokens = set(tokenize(field))
+    field_tokens = set(
+        tokenize(field)
+    )
 
     if not query_tokens or not field_tokens:
         return False
@@ -517,51 +588,71 @@ def fuzzy_score(query, field):
     )
 
 
-def field_match(query, title, author, publisher):
+def field_match(
+    query,
+    title,
+    author,
+    publisher,
+):
 
     q = normalize_text(query)
 
     if not q:
         return None, 0
 
-    # Exact title
+    # -------------------------------
+    # TITLE
+    # -------------------------------
+
     if q == normalize_text(title):
         return "Exact Title Match", 100
 
-    # Title phrase
     if phrase_contains(q, title):
         return "Title Match", 98
 
-    # Title keywords
     if exact_token_match(q, title):
         return "Title Keyword Match", 96
 
-    # Fuzzy title
-    score = fuzzy_score(q, title)
+    score = fuzzy_score(
+        q,
+        title,
+    )
 
     if score >= MIN_TITLE_SCORE:
         return "Strong Title Match", score
 
-    # Author
+    # -------------------------------
+    # AUTHOR
+    # -------------------------------
+
     if phrase_contains(q, author):
         return "Author Match", 94
 
     if exact_token_match(q, author):
         return "Author Keyword Match", 92
 
-    score = fuzzy_score(q, author)
+    score = fuzzy_score(
+        q,
+        author,
+    )
 
     if score >= MIN_AUTHOR_SCORE:
         return "Author Match", score * 0.96
 
-    # Publisher
+    # -------------------------------
+    # PUBLISHER
+    # -------------------------------
+
     if phrase_contains(q, publisher):
         return "Publisher Match", 91
 
     if exact_token_match(q, publisher):
         return "Publisher Keyword Match", 89
 
-    score = fuzzy_score(q, publisher)
+    score = fuzzy_score(
+        q,
+        publisher,
+    )
 
     if score >= MIN_PUBLISHER_SCORE:
         return "Publisher Match", score * 0.94
@@ -575,7 +666,13 @@ def search_books(query, rows):
 
     for row in rows:
 
-        book_id, title, author, publisher, language = row
+        (
+            book_id,
+            title,
+            author,
+            publisher,
+            language,
+        ) = row
 
         reason, score = field_match(
             query,
@@ -590,10 +687,10 @@ def search_books(query, rows):
         results.append(
             {
                 "id": book_id,
-                "title": title,
-                "author": author,
-                "publisher": publisher,
-                "language": language,
+                "title": clean_excel_text(title),
+                "author": clean_excel_text(author),
+                "publisher": clean_excel_text(publisher),
+                "language": clean_excel_text(language),
                 "score": round(score, 1),
                 "reason": reason,
             }
@@ -612,9 +709,14 @@ def search_books(query, rows):
 
     results.sort(
         key=lambda item: (
-            priority.get(item["reason"], 99),
+            priority.get(
+                item["reason"],
+                99,
+            ),
             -item["score"],
-            normalize_text(item["title"]),
+            normalize_text(
+                item["title"]
+            ),
         )
     )
 
@@ -625,7 +727,10 @@ def search_books(query, rows):
 # EXCEL
 # ============================================================
 
-def find_column(columns, names):
+def find_column(
+    columns,
+    names,
+):
 
     normalized_columns = {
         normalize_text(column): column
@@ -634,10 +739,14 @@ def find_column(columns, names):
 
     for name in names:
 
-        normalized_name = normalize_text(name)
+        normalized_name = normalize_text(
+            name
+        )
 
         if normalized_name in normalized_columns:
-            return normalized_columns[normalized_name]
+            return normalized_columns[
+                normalized_name
+            ]
 
     return None
 
@@ -652,7 +761,10 @@ def process_excel(uploaded_file):
 
     except Exception as exc:
 
-        return None, f"Unable to read Excel file: {exc}"
+        return (
+            None,
+            f"Unable to read Excel file: {exc}",
+        )
 
     if dataframe.empty:
         return None, "The Excel file is empty."
@@ -661,6 +773,10 @@ def process_excel(uploaded_file):
         axis=1,
         how="all",
     )
+
+    # -------------------------------
+    # FIND COLUMNS
+    # -------------------------------
 
     title_column = find_column(
         dataframe.columns,
@@ -715,51 +831,64 @@ def process_excel(uploaded_file):
             "Please name it 'Title' or 'Book Title'.",
         )
 
+    # -------------------------------
+    # CLEAN DATA
+    # -------------------------------
+
     clean = pd.DataFrame()
 
     clean["title"] = (
         dataframe[title_column]
-        .fillna("")
-        .astype(str)
-        .str.strip()
+        .apply(clean_excel_text)
     )
 
-    if author_column:
+    if author_column is not None:
+
         clean["author"] = (
             dataframe[author_column]
-            .fillna("")
-            .astype(str)
-            .str.strip()
+            .apply(clean_excel_text)
         )
+
     else:
+
         clean["author"] = ""
 
-    if publisher_column:
+    if publisher_column is not None:
+
         clean["publisher"] = (
             dataframe[publisher_column]
-            .fillna("")
-            .astype(str)
-            .str.strip()
+            .apply(clean_excel_text)
         )
+
     else:
+
         clean["publisher"] = ""
 
-    if language_column:
+    if language_column is not None:
+
         clean["language"] = (
             dataframe[language_column]
-            .fillna("")
-            .astype(str)
-            .str.strip()
+            .apply(clean_excel_text)
         )
+
     else:
+
         clean["language"] = ""
 
-    # Remove empty titles
+    # -------------------------------
+    # REMOVE EMPTY TITLES
+    # -------------------------------
+
     clean = clean[
-        clean["title"].str.strip() != ""
+        clean["title"].map(
+            normalize_text
+        ) != ""
     ]
 
-    # Remove duplicates
+    # -------------------------------
+    # REMOVE DUPLICATES
+    # -------------------------------
+
     clean["_key"] = (
         clean["title"].map(normalize_text)
         + "|"
@@ -769,17 +898,24 @@ def process_excel(uploaded_file):
     )
 
     clean = clean.drop_duplicates(
-        subset=["_key"]
+        subset=["_key"],
+        keep="first",
     )
 
     clean = clean.drop(
         columns=["_key"]
     )
 
-    clean = clean.reset_index(drop=True)
+    clean = clean.reset_index(
+        drop=True
+    )
 
     if clean.empty:
-        return None, "No valid book records were found."
+
+        return (
+            None,
+            "No valid book records were found.",
+        )
 
     return clean, None
 
@@ -794,16 +930,26 @@ def replace_database(dataframe):
 
     try:
 
+        # IMPORTANT:
+        # Delete the entire old catalogue first.
         connection.execute(
             "DELETE FROM books"
         )
 
         records = [
             (
-                str(row["title"]),
-                str(row["author"]),
-                str(row["publisher"]),
-                str(row["language"]),
+                clean_excel_text(
+                    row["title"]
+                ),
+                clean_excel_text(
+                    row["author"]
+                ),
+                clean_excel_text(
+                    row["publisher"]
+                ),
+                clean_excel_text(
+                    row["language"]
+                ),
             )
             for _, row in dataframe.iterrows()
         ]
@@ -837,14 +983,69 @@ def replace_database(dataframe):
 
 
 # ============================================================
+# CLEAR DATABASE
+# ============================================================
+
+def clear_database():
+
+    connection = get_connection()
+
+    try:
+
+        connection.execute(
+            "DELETE FROM books"
+        )
+
+        connection.commit()
+
+    except Exception:
+
+        connection.rollback()
+        raise
+
+    finally:
+
+        connection.close()
+
+    load_books.clear()
+
+
+# ============================================================
+# DATABASE INFO
+# ============================================================
+
+def database_book_count():
+
+    connection = get_connection()
+
+    try:
+
+        result = connection.execute(
+            "SELECT COUNT(*) FROM books"
+        ).fetchone()
+
+        return int(result[0])
+
+    finally:
+
+        connection.close()
+
+
+# ============================================================
 # HERO
 # ============================================================
 
 st.markdown(
     f"""
     <div class="hero">
-        <div class="hero-title">{APP_TITLE}</div>
-        <div class="hero-subtitle">{APP_SUBTITLE}</div>
+        <div class="hero-title">
+            {APP_TITLE}
+        </div>
+
+        <div class="hero-subtitle">
+            {APP_SUBTITLE}
+        </div>
+
         <div class="hero-line"></div>
     </div>
     """,
@@ -914,7 +1115,10 @@ with search_tab:
 
     query = st.text_input(
         "Catalogue Search",
-        placeholder="Enter book title, author, publisher or keyword...",
+        placeholder=(
+            "Enter book title, author, "
+            "publisher or keyword..."
+        ),
         label_visibility="collapsed",
     )
 
@@ -936,27 +1140,38 @@ with search_tab:
 
             for book in results:
 
-                title = str(book["title"]).replace(
-                    "<", "&lt;"
-                ).replace(
-                    ">", "&gt;"
+                # Escape HTML only for safe display.
+                # HTML tags from Excel have already
+                # been removed by clean_excel_text().
+
+                title = html.escape(
+                    str(book["title"])
                 )
 
-                author = str(
-                    book["author"] or "—"
-                ).replace("<", "&lt;").replace(">", "&gt;")
+                author = html.escape(
+                    str(
+                        book["author"]
+                        or "—"
+                    )
+                )
 
-                publisher = str(
-                    book["publisher"] or "—"
-                ).replace("<", "&lt;").replace(">", "&gt;")
+                publisher = html.escape(
+                    str(
+                        book["publisher"]
+                        or "—"
+                    )
+                )
 
-                language = str(
-                    book["language"] or "—"
-                ).replace("<", "&lt;").replace(">", "&gt;")
+                language = html.escape(
+                    str(
+                        book["language"]
+                        or "—"
+                    )
+                )
 
-                reason = str(
-                    book["reason"]
-                ).replace("<", "&lt;").replace(">", "&gt;")
+                reason = html.escape(
+                    str(book["reason"])
+                )
 
                 st.markdown(
                     f"""
@@ -967,22 +1182,29 @@ with search_tab:
                         </div>
 
                         <div class="book-info">
-                            <span class="book-label">Author:</span>
+                            <span class="book-label">
+                                Author:
+                            </span>
                             {author}
                         </div>
 
                         <div class="book-info">
-                            <span class="book-label">Publisher:</span>
+                            <span class="book-label">
+                                Publisher:
+                            </span>
                             {publisher}
                         </div>
 
                         <div class="book-info">
-                            <span class="book-label">Language:</span>
+                            <span class="book-label">
+                                Language:
+                            </span>
                             {language}
                         </div>
 
                         <div class="match-badge">
-                            Match: {reason} ({book["score"]}%)
+                            Match: {reason}
+                            ({book["score"]}%)
                         </div>
 
                     </div>
@@ -996,7 +1218,9 @@ with search_tab:
                 """
                 <div class="empty-card">
 
-                    <div class="empty-icon">🔍</div>
+                    <div class="empty-icon">
+                        🔍
+                    </div>
 
                     <div class="empty-title">
                         No matching books found
@@ -1043,6 +1267,7 @@ with search_tab:
                         <div class="metric-number">
                             {number:,}
                         </div>
+
                         <div class="metric-label">
                             {label}
                         </div>
@@ -1067,27 +1292,70 @@ with management_tab:
 
     st.markdown(
         '<div class="section-description">'
-        'Upload your Excel catalogue and replace the '
-        'current contents of library.db.'
+        'Use this area every month to replace the '
+        'old catalogue with your new Excel file.'
         '</div>',
         unsafe_allow_html=True,
     )
+
+    # --------------------------------------------------------
+    # CURRENT DATABASE STATUS
+    # --------------------------------------------------------
+
+    current_count = database_book_count()
+
+    st.markdown(
+        f"""
+        <div class="import-card">
+
+            <div class="import-title">
+                📚 Current Catalogue
+            </div>
+
+            <div class="import-text">
+                Current books stored in the database:
+                <b>{current_count:,}</b>
+            </div>
+
+            <div class="import-text">
+                Database file:
+                <b>{DATABASE_FILE.name}</b>
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # --------------------------------------------------------
+    # MONTHLY IMPORT
+    # --------------------------------------------------------
 
     st.markdown(
         """
         <div class="import-card">
 
             <div class="import-title">
-                📊 Excel Catalogue Import
+                📊 Monthly Excel Catalogue Import
             </div>
 
             <div class="import-text">
-                Your Excel file should contain a
-                <b>Title</b> column.
-                Optional columns are
+                Upload your new Excel catalogue.
+                Importing it will DELETE the old
+                catalogue and replace it with the
+                new catalogue.
+            </div>
+
+            <div class="import-text">
+                Required column:
+                <b>Title</b>
+            </div>
+
+            <div class="import-text">
+                Optional:
                 <b>Author</b>,
-                <b>Publisher</b> and
-                <b>Language</b>.
+                <b>Publisher</b>,
+                <b>Language</b>
             </div>
 
         </div>
@@ -1098,7 +1366,7 @@ with management_tab:
     uploaded_file = st.file_uploader(
         "Upload Excel catalogue",
         type=["xlsx", "xls"],
-        help="Upload your library catalogue.",
+        help="Upload your monthly library catalogue.",
     )
 
     if uploaded_file:
@@ -1114,10 +1382,13 @@ with management_tab:
         else:
 
             st.success(
-                f"{len(dataframe):,} book records detected."
+                f"{len(dataframe):,} clean book "
+                f"records detected."
             )
 
-            st.markdown("### Preview")
+            st.markdown(
+                "### Preview"
+            )
 
             st.dataframe(
                 dataframe.head(20),
@@ -1128,12 +1399,14 @@ with management_tab:
             c1, c2, c3 = st.columns(3)
 
             with c1:
+
                 st.metric(
                     "Books",
                     f"{len(dataframe):,}",
                 )
 
             with c2:
+
                 st.metric(
                     "Authors",
                     dataframe["author"]
@@ -1143,6 +1416,7 @@ with management_tab:
                 )
 
             with c3:
+
                 st.metric(
                     "Publishers",
                     dataframe["publisher"]
@@ -1152,12 +1426,14 @@ with management_tab:
                 )
 
             st.warning(
-                "Importing this file will replace "
-                "the current library.db catalogue."
+                f"This will DELETE the current "
+                f"{current_count:,} books and replace "
+                f"them with {len(dataframe):,} books "
+                f"from this Excel file."
             )
 
             if st.button(
-                "💾 Import Catalogue",
+                "🔄 Replace Catalogue with This Excel File",
                 type="primary",
                 use_container_width=True,
             ):
@@ -1169,8 +1445,9 @@ with management_tab:
                     )
 
                     st.success(
-                        f"Successfully imported "
-                        f"{len(dataframe):,} books into library.db."
+                        f"Catalogue replaced successfully. "
+                        f"{len(dataframe):,} books are now "
+                        f"stored in library.db."
                     )
 
                     st.rerun()
@@ -1180,6 +1457,65 @@ with management_tab:
                     st.error(
                         f"Database update failed: {exc}"
                     )
+
+    # --------------------------------------------------------
+    # DELETE / CLEAR DATABASE
+    # --------------------------------------------------------
+
+    st.markdown(
+        """
+        <div class="danger-box">
+
+            <div class="danger-title">
+                🗑️ Clear Entire Catalogue
+            </div>
+
+            <div class="danger-text">
+                This removes ALL books from
+                library.db. Use this only when
+                you want an empty catalogue.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    confirm_delete = st.checkbox(
+        "I understand that this will remove all books.",
+        key="confirm_delete_database",
+    )
+
+    if st.button(
+        "🗑️ Delete All Catalogue Data",
+        type="secondary",
+        use_container_width=True,
+    ):
+
+        if not confirm_delete:
+
+            st.error(
+                "Please confirm the checkbox before "
+                "deleting the catalogue."
+            )
+
+        else:
+
+            try:
+
+                clear_database()
+
+                st.success(
+                    "All catalogue data has been deleted."
+                )
+
+                st.rerun()
+
+            except Exception as exc:
+
+                st.error(
+                    f"Unable to clear database: {exc}"
+                )
 
 
 # ============================================================
@@ -1195,23 +1531,53 @@ st.markdown(
         </div>
 
         <div class="system-row">
-            <span class="system-key">Database</span>
-            <span class="system-value">{DATABASE_FILE.name}</span>
+            <span class="system-key">
+                Database
+            </span>
+
+            <span class="system-value">
+                {DATABASE_FILE.name}
+            </span>
         </div>
 
         <div class="system-row">
-            <span class="system-key">Books Indexed</span>
-            <span class="system-value">{total_books:,}</span>
+            <span class="system-key">
+                Database Location
+            </span>
+
+            <span class="system-value">
+                {html.escape(str(DATABASE_FILE))}
+            </span>
         </div>
 
         <div class="system-row">
-            <span class="system-key">Search Engine</span>
-            <span class="system-value">Exact + Token + Fuzzy</span>
+            <span class="system-key">
+                Books Indexed
+            </span>
+
+            <span class="system-value">
+                {total_books:,}
+            </span>
         </div>
 
         <div class="system-row">
-            <span class="system-key">Catalogue Source</span>
-            <span class="system-value">Excel</span>
+            <span class="system-key">
+                Search Engine
+            </span>
+
+            <span class="system-value">
+                Exact + Token + Fuzzy
+            </span>
+        </div>
+
+        <div class="system-row">
+            <span class="system-key">
+                Catalogue Source
+            </span>
+
+            <span class="system-value">
+                Excel
+            </span>
         </div>
 
     </div>
