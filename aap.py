@@ -2,24 +2,27 @@ import html
 import re
 import sqlite3
 import unicodedata
-from datetime import datetime
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pandas as pd
 import streamlit as st
 from rapidfuzz import fuzz
 
 
 # ============================================================
-# CONFIG
+# CONFIGURATION
 # ============================================================
 
 APP_TITLE = "Dar Makkah International"
-APP_SUBTITLE = "Library Catalogue Management System"
+APP_SUBTITLE = "Library Catalogue Search System"
 
 DATABASE_FILE = Path("library.db")
 
-MAX_RESULTS = 50
+MAX_RESULTS = 100
+
+MIN_TITLE_SCORE = 72
+MIN_AUTHOR_SCORE = 78
+MIN_PUBLISHER_SCORE = 82
 
 
 # ============================================================
@@ -38,28 +41,15 @@ st.set_page_config(
 # PROFESSIONAL LIGHT UI
 # ============================================================
 
-st.html(
+st.markdown(
     """
     <style>
 
-    :root {
-        --navy: #173B57;
-        --navy-dark: #102A43;
-        --teal: #167D8D;
-        --teal-light: #E8F6F7;
-        --gold: #B58A24;
-        --bg: #F5F7FA;
-        --card: #FFFFFF;
-        --border: #E2E8F0;
-        --text: #172033;
-        --muted: #667085;
-        --success: #238636;
-        --danger: #C62828;
-    }
+    /* ---------- GLOBAL ---------- */
 
     .stApp {
-        background: var(--bg);
-        color: var(--text);
+        background: #F5F7FA;
+        color: #172033;
     }
 
     .main .block-container {
@@ -77,93 +67,65 @@ st.html(
         background: transparent !important;
     }
 
-    /* HEADER */
 
-    .library-header {
+    /* ---------- HEADER ---------- */
+
+    .hero {
         background: linear-gradient(
             135deg,
-            #173B57 0%,
-            #214D6B 100%
+            #12304A 0%,
+            #174E70 100%
         );
 
-        padding: 2rem 2rem 1.8rem 2rem;
-        border-radius: 16px;
+        border-radius: 18px;
+        padding: 2.2rem 2rem;
         margin-bottom: 1.8rem;
 
-        box-shadow:
-            0 8px 25px rgba(23, 59, 87, 0.15);
+        box-shadow: 0 8px 30px rgba(18, 48, 74, 0.15);
     }
 
-    .main-heading {
+    .hero-title {
         color: white;
         font-size: 2.35rem;
         font-weight: 800;
-        letter-spacing: .3px;
         margin: 0;
+        letter-spacing: .3px;
     }
 
-    .sub-heading {
-        color: #D9EEF2;
+    .hero-subtitle {
+        color: #D9E8F2;
         font-size: 1.05rem;
-        margin-top: .45rem;
+        margin-top: .5rem;
     }
 
-    .header-line {
+    .hero-line {
         width: 70px;
         height: 4px;
-        background: #D4AD45;
+        background: #C69A3A;
         border-radius: 5px;
         margin-top: 1rem;
     }
 
-    /* SECTION */
 
-    .section-heading {
-        color: var(--navy);
-        font-size: 1.35rem;
+    /* ---------- SEARCH ---------- */
+
+    .search-title {
+        color: #12304A;
+        font-size: 1.25rem;
         font-weight: 750;
-        margin-top: 1.5rem;
         margin-bottom: .5rem;
     }
 
-    .section-description {
-        color: var(--muted);
-        font-size: .92rem;
-        margin-bottom: 1rem;
+    .search-help {
+        color: #667085;
+        margin-bottom: .8rem;
     }
-
-    /* DASHBOARD */
-
-    .dashboard-card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 1.25rem;
-        min-height: 120px;
-
-        box-shadow:
-            0 4px 15px rgba(15, 23, 42, .05);
-    }
-
-    .dashboard-number {
-        color: var(--navy);
-        font-size: 2rem;
-        font-weight: 800;
-    }
-
-    .dashboard-label {
-        color: var(--muted);
-        font-size: .85rem;
-        margin-top: .3rem;
-    }
-
-    /* SEARCH */
 
     .stTextInput > div > div > input {
         background: white !important;
-        color: var(--text) !important;
+        color: #172033 !important;
 
-        border: 1px solid #CBD5E1 !important;
+        border: 1px solid #D0D5DD !important;
         border-radius: 10px !important;
 
         padding: 13px !important;
@@ -171,88 +133,85 @@ st.html(
     }
 
     .stTextInput > div > div > input:focus {
-        border-color: var(--teal) !important;
-
-        box-shadow:
-            0 0 0 1px var(--teal) !important;
+        border-color: #174E70 !important;
+        box-shadow: 0 0 0 1px #174E70 !important;
     }
 
-    .stTextInput label {
-        color: var(--text) !important;
-        font-weight: 650 !important;
-    }
 
-    /* UPLOAD */
+    /* ---------- METRICS ---------- */
 
-    .upload-card {
+    .metric-card {
         background: white;
-        border: 2px dashed #9CCDD2;
+        border: 1px solid #E4E7EC;
         border-radius: 14px;
-        padding: 1.4rem;
-        margin-top: .8rem;
 
-        box-shadow:
-            0 4px 15px rgba(15, 23, 42, .04);
+        padding: 1.25rem;
+
+        box-shadow: 0 3px 12px rgba(16, 24, 40, .05);
     }
 
-    .upload-title {
-        color: var(--navy);
-        font-size: 1.1rem;
-        font-weight: 750;
+    .metric-number {
+        color: #174E70;
+        font-size: 1.9rem;
+        font-weight: 800;
     }
 
-    .upload-description {
-        color: var(--muted);
-        font-size: .9rem;
-        margin-top: .25rem;
+    .metric-label {
+        color: #667085;
+        font-size: .86rem;
+        margin-top: .2rem;
     }
 
-    /* BOOK */
+
+    /* ---------- RESULT ---------- */
 
     .book-card {
         background: white;
 
-        border: 1px solid var(--border);
-        border-left: 4px solid var(--teal);
+        border: 1px solid #E4E7EC;
+        border-left: 4px solid #C69A3A;
 
         border-radius: 12px;
 
-        padding: 1.2rem 1.35rem;
-        margin: .8rem 0;
+        padding: 1.2rem 1.3rem;
 
-        box-shadow:
-            0 4px 15px rgba(15, 23, 42, .05);
+        margin: 1rem 0 .45rem 0;
+
+        box-shadow: 0 4px 14px rgba(16, 24, 40, .06);
     }
 
     .book-title {
-        color: var(--navy);
+        color: #12304A;
         font-size: 1.25rem;
         font-weight: 750;
         line-height: 1.4;
         margin-bottom: .7rem;
     }
 
-    .book-badge {
+    .badge {
         display: inline-block;
 
-        background: #F1F5F9;
-        color: #475569;
+        background: #F2F4F7;
+        color: #475467;
 
-        border: 1px solid #E2E8F0;
+        border: 1px solid #E4E7EC;
+
         border-radius: 6px;
 
         padding: 4px 9px;
+
         margin-right: 5px;
+        margin-bottom: 4px;
 
         font-size: .78rem;
         font-weight: 600;
     }
 
-    .match-badge {
+    .match {
         display: inline-block;
 
-        background: #E8F6F7;
-        color: #12616B;
+        background: #174E70;
+        color: white;
 
         border-radius: 6px;
 
@@ -262,132 +221,144 @@ st.html(
         font-weight: 650;
     }
 
-    /* INFO */
-
-    .info-card {
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1rem 1.2rem;
-        margin-top: 1rem;
+    .match-exact {
+        background: #18794E;
     }
 
-    .info-title {
-        color: var(--navy);
+    .match-title {
+        background: #1769AA;
+    }
+
+    .match-author {
+        background: #087F8C;
+    }
+
+    .match-publisher {
+        background: #9A6F00;
+    }
+
+
+    /* ---------- SECTION ---------- */
+
+    .section-title {
+        color: #12304A;
+        font-size: 1.3rem;
         font-weight: 750;
+
+        border-left: 4px solid #C69A3A;
+
+        padding-left: .7rem;
+
+        margin-top: 1.8rem;
         margin-bottom: .5rem;
     }
 
-    .info-row {
+    .section-description {
+        color: #667085;
+        margin-bottom: 1rem;
+    }
+
+
+    /* ---------- IMPORT ---------- */
+
+    .import-box {
+        background: white;
+
+        border: 1px solid #E4E7EC;
+        border-radius: 14px;
+
+        padding: 1.4rem;
+
+        box-shadow: 0 3px 12px rgba(16, 24, 40, .05);
+    }
+
+    .import-title {
+        color: #12304A;
+        font-size: 1.15rem;
+        font-weight: 750;
+    }
+
+
+    /* ---------- EMPTY ---------- */
+
+    .empty {
+        background: white;
+
+        border: 1px solid #E4E7EC;
+
+        border-radius: 14px;
+
+        padding: 2.5rem;
+
+        text-align: center;
+
+        margin-top: 1rem;
+    }
+
+    .empty-icon {
+        font-size: 2rem;
+    }
+
+    .empty-title {
+        color: #12304A;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: .5rem;
+    }
+
+    .empty-text {
+        color: #667085;
+        margin-top: .4rem;
+    }
+
+
+    /* ---------- SYSTEM ---------- */
+
+    .system {
+        background: #12304A;
+        color: white;
+
+        border-radius: 14px;
+
+        padding: 1.2rem 1.4rem;
+
+        margin-top: 2rem;
+    }
+
+    .system-title {
+        color: #D8B65A;
+        font-weight: 750;
+        margin-bottom: .7rem;
+    }
+
+    .system-row {
         display: flex;
         justify-content: space-between;
 
-        border-bottom: 1px solid #EEF2F6;
-        padding: .55rem 0;
+        padding: .45rem 0;
 
-        font-size: .9rem;
+        border-bottom: 1px solid rgba(255,255,255,.12);
+
+        font-size: .88rem;
     }
 
-    .info-row:last-child {
+    .system-row:last-child {
         border-bottom: none;
     }
 
-    .info-key {
-        color: var(--muted);
+    .system-key {
+        color: #B8C7D4;
     }
 
-    .info-value {
-        color: var(--text);
-        font-weight: 650;
-    }
-
-    /* BUTTONS */
-
-    .stButton > button {
-        background: var(--navy);
+    .system-value {
         color: white;
-
-        border: none;
-        border-radius: 8px;
-
-        font-weight: 650;
-
-        padding: .55rem 1rem;
-    }
-
-    .stButton > button:hover {
-        background: var(--teal);
-        color: white;
-    }
-
-    /* DATAFRAME */
-
-    [data-testid="stDataFrame"] {
-        border: 1px solid var(--border);
-        border-radius: 10px;
-    }
-
-    hr {
-        border-color: #E2E8F0 !important;
+        font-weight: 600;
     }
 
     </style>
-    """
+    """,
+    unsafe_allow_html=True,
 )
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def safe(value):
-    return html.escape(str(value or ""))
-
-
-def normalize_text(text):
-    if not text:
-        return ""
-
-    text = str(text).strip()
-
-    text = unicodedata.normalize("NFKD", text)
-
-    text = "".join(
-        c for c in text
-        if not unicodedata.combining(c)
-    )
-
-    arabic_diacritics = re.compile(
-        r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]"
-    )
-
-    text = arabic_diacritics.sub("", text)
-
-    text = text.translate(
-        str.maketrans(
-            {
-                "أ": "ا",
-                "إ": "ا",
-                "آ": "ا",
-                "ٱ": "ا",
-                "ى": "ي",
-                "ئ": "ي",
-                "ؤ": "و",
-                "ـ": "",
-            }
-        )
-    )
-
-    text = text.lower()
-
-    text = re.sub(
-        r"[^\w\u0600-\u06FF]+",
-        " ",
-        text,
-        flags=re.UNICODE,
-    )
-
-    return " ".join(text.split())
 
 
 # ============================================================
@@ -406,46 +377,17 @@ def get_connection():
     return connection
 
 
-def initialize_database():
-
+def create_database():
     connection = get_connection()
 
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            title TEXT NOT NULL,
-            author TEXT DEFAULT '',
-            publisher TEXT DEFAULT '',
-            language TEXT DEFAULT '',
-            category TEXT DEFAULT '',
-            isbn TEXT DEFAULT '',
-            catalogue_number TEXT DEFAULT '',
-
-            source_pdf TEXT DEFAULT '',
-            imported_at TEXT DEFAULT '',
-
-            UNIQUE(
-                title,
-                author,
-                publisher
-            )
-        )
-        """
-    )
-
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS imports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            filename TEXT,
-            uploaded_at TEXT,
-            books_found INTEGER DEFAULT 0,
-            books_added INTEGER DEFAULT 0,
-            books_updated INTEGER DEFAULT 0,
-            status TEXT
+            title TEXT,
+            author TEXT,
+            publisher TEXT,
+            language TEXT
         )
         """
     )
@@ -454,297 +396,15 @@ def initialize_database():
     connection.close()
 
 
-initialize_database()
+create_database()
 
 
 # ============================================================
-# PDF TEXT EXTRACTION
+# LOAD DATABASE
 # ============================================================
 
-def extract_pdf_text(uploaded_file):
-
-    pdf_bytes = uploaded_file.getvalue()
-
-    document = fitz.open(
-        stream=pdf_bytes,
-        filetype="pdf",
-    )
-
-    pages = []
-
-    for page in document:
-
-        text = page.get_text(
-            "text"
-        )
-
-        if text:
-            pages.append(text)
-
-    document.close()
-
-    return "\n".join(pages)
-
-
-# ============================================================
-# BOOK EXTRACTION
-#
-# This parser supports common catalogue labels.
-# We can make it exact once you provide your PDF.
-# ============================================================
-
-def extract_books_from_text(text):
-
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-
-    lines = [
-        line.strip()
-        for line in text.split("\n")
-        if line.strip()
-    ]
-
-    books = []
-
-    current = {
-        "title": "",
-        "author": "",
-        "publisher": "",
-        "language": "",
-        "category": "",
-        "isbn": "",
-        "catalogue_number": "",
-    }
-
-    current_field = None
-
-    field_patterns = {
-        "title": r"^(title|book\s*title|العنوان)\s*[:\-]\s*(.*)$",
-        "author": r"^(author|authors|المؤلف|المؤلفون)\s*[:\-]\s*(.*)$",
-        "publisher": r"^(publisher|الناشر)\s*[:\-]\s*(.*)$",
-        "language": r"^(language|lang|اللغة)\s*[:\-]\s*(.*)$",
-        "category": r"^(category|subject|التصنيف|الموضوع)\s*[:\-]\s*(.*)$",
-        "isbn": r"^(isbn)\s*[:\-]?\s*(.*)$",
-        "catalogue_number": (
-            r"^(catalogue\s*(number|no)?|"
-            r"catalog\s*(number|no)?)\s*[:\-]\s*(.*)$"
-        ),
-    }
-
-    def save_current():
-
-        if not current["title"]:
-            return
-
-        book = {
-            key: value.strip()
-            for key, value in current.items()
-        }
-
-        books.append(book)
-
-    for line in lines:
-
-        matched = False
-
-        for field, pattern in field_patterns.items():
-
-            match = re.match(
-                pattern,
-                line,
-                flags=re.IGNORECASE,
-            )
-
-            if match:
-
-                current[field] = match.groups()[-1].strip()
-
-                current_field = field
-
-                matched = True
-
-                break
-
-        if matched:
-            continue
-
-        # Blank/new record indicators
-        if re.match(
-            r"^(book|record|item)\s*#?\s*\d+",
-            line,
-            flags=re.IGNORECASE,
-        ):
-
-            if current["title"]:
-                save_current()
-
-            current = {
-                "title": "",
-                "author": "",
-                "publisher": "",
-                "language": "",
-                "category": "",
-                "isbn": "",
-                "catalogue_number": "",
-            }
-
-            current_field = None
-
-            continue
-
-        # Continue previous field
-        if current_field and current[current_field]:
-
-            # Avoid making very long accidental fields.
-            if len(current[current_field]) < 500:
-
-                current[current_field] += " " + line
-
-    save_current()
-
-    return books
-
-
-# ============================================================
-# DATABASE IMPORT
-# ============================================================
-
-def import_books(
-    books,
-    filename,
-):
-
-    connection = get_connection()
-
-    added = 0
-    updated = 0
-
-    now = datetime.now().isoformat(
-        timespec="seconds"
-    )
-
-    for book in books:
-
-        title = book["title"].strip()
-
-        if not title:
-            continue
-
-        existing = connection.execute(
-            """
-            SELECT id
-            FROM books
-            WHERE title = ?
-              AND author = ?
-              AND publisher = ?
-            """,
-            (
-                title,
-                book["author"],
-                book["publisher"],
-            ),
-        ).fetchone()
-
-        if existing:
-
-            connection.execute(
-                """
-                UPDATE books
-
-                SET language = ?,
-                    category = ?,
-                    isbn = ?,
-                    catalogue_number = ?,
-                    source_pdf = ?,
-                    imported_at = ?
-
-                WHERE id = ?
-                """,
-                (
-                    book["language"],
-                    book["category"],
-                    book["isbn"],
-                    book["catalogue_number"],
-                    filename,
-                    now,
-                    existing["id"],
-                ),
-            )
-
-            updated += 1
-
-        else:
-
-            connection.execute(
-                """
-                INSERT INTO books (
-                    title,
-                    author,
-                    publisher,
-                    language,
-                    category,
-                    isbn,
-                    catalogue_number,
-                    source_pdf,
-                    imported_at
-                )
-
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    title,
-                    book["author"],
-                    book["publisher"],
-                    book["language"],
-                    book["category"],
-                    book["isbn"],
-                    book["catalogue_number"],
-                    filename,
-                    now,
-                ),
-            )
-
-            added += 1
-
-    connection.execute(
-        """
-        INSERT INTO imports (
-            filename,
-            uploaded_at,
-            books_found,
-            books_added,
-            books_updated,
-            status
-        )
-
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            filename,
-            now,
-            len(books),
-            added,
-            updated,
-            "Completed",
-        ),
-    )
-
-    connection.commit()
-    connection.close()
-
-    return added, updated
-
-
-# ============================================================
-# SEARCH
-# ============================================================
-
-def search_books(query):
-
-    query_normalized = normalize_text(query)
-
-    if not query_normalized:
-        return []
+@st.cache_data(ttl=60, show_spinner=False)
+def load_books():
 
     connection = get_connection()
 
@@ -755,119 +415,244 @@ def search_books(query):
             title,
             author,
             publisher,
-            language,
-            category,
-            isbn,
-            catalogue_number
+            language
         FROM books
+        ORDER BY title COLLATE NOCASE
         """
     ).fetchall()
 
     connection.close()
 
+    return tuple(
+        (
+            row["id"],
+            row["title"] or "",
+            row["author"] or "",
+            row["publisher"] or "",
+            row["language"] or "",
+        )
+        for row in rows
+    )
+
+
+# ============================================================
+# NORMALIZATION
+# ============================================================
+
+ARABIC_DIACRITICS = re.compile(
+    r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]"
+)
+
+ARABIC_TRANSLATION = str.maketrans(
+    {
+        "أ": "ا",
+        "إ": "ا",
+        "آ": "ا",
+        "ٱ": "ا",
+        "ى": "ي",
+        "ئ": "ي",
+        "ؤ": "و",
+        "ـ": "",
+        "ﻻ": "لا",
+        "ﻷ": "لا",
+        "ﻹ": "لا",
+        "ﻵ": "لا",
+    }
+)
+
+
+def normalize_text(text):
+
+    if text is None:
+        return ""
+
+    text = str(text).strip()
+
+    if not text:
+        return ""
+
+    text = unicodedata.normalize("NFKD", text)
+
+    text = "".join(
+        character
+        for character in text
+        if not unicodedata.combining(character)
+    )
+
+    text = ARABIC_DIACRITICS.sub("", text)
+
+    text = text.translate(ARABIC_TRANSLATION)
+
+    text = text.lower()
+
+    text = (
+        text
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
+
+    text = re.sub(
+        r"[^\w\u0600-\u06FF]+",
+        " ",
+        text,
+        flags=re.UNICODE,
+    )
+
+    return " ".join(text.split())
+
+
+def tokenize(text):
+
+    value = normalize_text(text)
+
+    return value.split() if value else []
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+def phrase_contains(query, field):
+
+    query = normalize_text(query)
+    field = normalize_text(field)
+
+    return bool(query and field and query in field)
+
+
+def exact_token_match(query, field):
+
+    query_tokens = tokenize(query)
+    field_tokens = set(tokenize(field))
+
+    if not query_tokens or not field_tokens:
+        return False
+
+    return all(
+        token in field_tokens
+        for token in query_tokens
+    )
+
+
+def fuzzy_score(query, field):
+
+    q = normalize_text(query)
+    f = normalize_text(field)
+
+    if not q or not f:
+        return 0
+
+    if q == f:
+        return 100
+
+    if q in f:
+        return 98
+
+    return max(
+        fuzz.ratio(q, f),
+        fuzz.partial_ratio(q, f),
+        fuzz.token_set_ratio(q, f),
+        fuzz.WRatio(q, f),
+    )
+
+
+def field_match(query, title, author, publisher):
+
+    q = normalize_text(query)
+
+    # Exact title
+    if q == normalize_text(title) and q:
+        return "Exact Title Match", 100
+
+    # Title phrase
+    if phrase_contains(q, title):
+        return "Title Match", 98
+
+    # Title words
+    if exact_token_match(q, title):
+        return "Title Keyword Match", 96
+
+    # Fuzzy title
+    score = fuzzy_score(q, title)
+
+    if score >= MIN_TITLE_SCORE:
+        return "Strong Title Match", score
+
+    # Author
+    if phrase_contains(q, author):
+        return "Author Match", 94
+
+    if exact_token_match(q, author):
+        return "Author Keyword Match", 92
+
+    score = fuzzy_score(q, author)
+
+    if score >= MIN_AUTHOR_SCORE:
+        return "Author Match", score * .96
+
+    # Publisher
+    if phrase_contains(q, publisher):
+        return "Publisher Match", 91
+
+    if exact_token_match(q, publisher):
+        return "Publisher Keyword Match", 89
+
+    score = fuzzy_score(q, publisher)
+
+    if score >= MIN_PUBLISHER_SCORE:
+        return "Publisher Match", score * .94
+
+    return None, 0
+
+
+def search_books(query, rows):
+
     results = []
 
     for row in rows:
 
-        title = normalize_text(
-            row["title"]
+        book_id, title, author, publisher, language = row
+
+        reason, score = field_match(
+            query,
+            title,
+            author,
+            publisher,
         )
 
-        author = normalize_text(
-            row["author"]
-        )
-
-        publisher = normalize_text(
-            row["publisher"]
-        )
-
-        title_score = max(
-            fuzz.ratio(query_normalized, title),
-            fuzz.partial_ratio(query_normalized, title),
-            fuzz.token_set_ratio(
-                query_normalized,
-                title,
-            ),
-        )
-
-        author_score = max(
-            fuzz.ratio(query_normalized, author),
-            fuzz.partial_ratio(query_normalized, author),
-            fuzz.token_set_ratio(
-                query_normalized,
-                author,
-            ),
-        ) if author else 0
-
-        publisher_score = max(
-            fuzz.ratio(
-                query_normalized,
-                publisher,
-            ),
-            fuzz.partial_ratio(
-                query_normalized,
-                publisher,
-            ),
-            fuzz.token_set_ratio(
-                query_normalized,
-                publisher,
-            ),
-        ) if publisher else 0
-
-        # Exact title
-        if query_normalized == title:
-
-            score = 100
-            reason = "Exact Title Match"
-
-        # Query appears in title
-        elif query_normalized in title:
-
-            score = 98
-            reason = "Title Match"
-
-        # Strong title
-        elif title_score >= 72:
-
-            score = title_score
-            reason = "Title Match"
-
-        # Author
-        elif author_score >= 78:
-
-            score = author_score * 0.96
-            reason = "Author Match"
-
-        # Publisher
-        elif publisher_score >= 82:
-
-            score = publisher_score * 0.94
-            reason = "Publisher Match"
-
-        else:
+        if not reason:
             continue
 
         results.append(
             {
-                "id": row["id"],
-                "title": row["title"],
-                "author": row["author"],
-                "publisher": row["publisher"],
-                "language": row["language"],
-                "category": row["category"],
-                "isbn": row["isbn"],
-                "catalogue_number": row[
-                    "catalogue_number"
-                ],
+                "id": book_id,
+                "title": title,
+                "author": author,
+                "publisher": publisher,
+                "language": language,
                 "score": round(score, 1),
                 "reason": reason,
             }
         )
 
+    priority = {
+        "Exact Title Match": 0,
+        "Title Match": 1,
+        "Title Keyword Match": 2,
+        "Strong Title Match": 3,
+        "Author Match": 4,
+        "Author Keyword Match": 5,
+        "Publisher Match": 6,
+        "Publisher Keyword Match": 7,
+    }
+
     results.sort(
-        key=lambda x: (
-            -x["score"],
-            normalize_text(x["title"]),
+        key=lambda item: (
+            priority.get(item["reason"], 99),
+            -item["score"],
+            normalize_text(item["title"]),
         )
     )
 
@@ -875,469 +660,655 @@ def search_books(query):
 
 
 # ============================================================
-# STATISTICS
+# EXCEL IMPORT
 # ============================================================
 
-def get_statistics():
+def find_column(columns, possible_names):
+
+    normalized = {
+        normalize_text(column): column
+        for column in columns
+    }
+
+    for name in possible_names:
+
+        name_normalized = normalize_text(name)
+
+        if name_normalized in normalized:
+            return normalized[name_normalized]
+
+    return None
+
+
+def process_excel(uploaded_file):
+
+    try:
+
+        dataframe = pd.read_excel(
+            uploaded_file
+        )
+
+    except Exception as exc:
+
+        return None, f"Unable to read Excel file: {exc}"
+
+
+    if dataframe.empty:
+        return None, "The Excel file is empty."
+
+
+    # Remove completely empty columns
+    dataframe = dataframe.dropna(
+        axis=1,
+        how="all",
+    )
+
+
+    # --------------------------------------------------------
+    # Detect columns
+    # --------------------------------------------------------
+
+    title_column = find_column(
+        dataframe.columns,
+        [
+            "title",
+            "book title",
+            "book",
+            "name",
+            "book name",
+            "العنوان",
+            "عنوان الكتاب",
+            "اسم الكتاب",
+        ],
+    )
+
+    author_column = find_column(
+        dataframe.columns,
+        [
+            "author",
+            "book author",
+            "writer",
+            "المؤلف",
+            "اسم المؤلف",
+        ],
+    )
+
+    publisher_column = find_column(
+        dataframe.columns,
+        [
+            "publisher",
+            "publishing house",
+            "publisher name",
+            "الناشر",
+            "دار النشر",
+        ],
+    )
+
+    language_column = find_column(
+        dataframe.columns,
+        [
+            "language",
+            "lang",
+            "اللغة",
+        ],
+    )
+
+
+    if title_column is None:
+
+        return (
+            None,
+            "Could not find a Title column. "
+            "Please name the column 'Title' or 'Book Title'.",
+        )
+
+
+    # --------------------------------------------------------
+    # Build clean dataframe
+    # --------------------------------------------------------
+
+    clean = pd.DataFrame()
+
+    clean["title"] = (
+        dataframe[title_column]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    if author_column:
+        clean["author"] = (
+            dataframe[author_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+    else:
+        clean["author"] = ""
+
+
+    if publisher_column:
+        clean["publisher"] = (
+            dataframe[publisher_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+    else:
+        clean["publisher"] = ""
+
+
+    if language_column:
+        clean["language"] = (
+            dataframe[language_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+    else:
+        clean["language"] = ""
+
+
+    # Remove empty titles
+    clean = clean[
+        clean["title"].str.strip() != ""
+    ]
+
+
+    # Remove duplicate books
+    clean["_duplicate_key"] = (
+        clean["title"].map(normalize_text)
+        + "|"
+        + clean["author"].map(normalize_text)
+        + "|"
+        + clean["publisher"].map(normalize_text)
+    )
+
+    clean = clean.drop_duplicates(
+        subset=["_duplicate_key"]
+    )
+
+    clean = clean.drop(
+        columns=["_duplicate_key"]
+    )
+
+    clean = clean.reset_index(drop=True)
+
+
+    if clean.empty:
+        return None, "No valid book records were found."
+
+
+    return clean, None
+
+
+def replace_database(dataframe):
 
     connection = get_connection()
 
-    books = connection.execute(
-        "SELECT COUNT(*) FROM books"
-    ).fetchone()[0]
+    try:
 
-    authors = connection.execute(
-        """
-        SELECT COUNT(DISTINCT author)
-        FROM books
-        WHERE author != ''
-        """
-    ).fetchone()[0]
+        connection.execute(
+            "DELETE FROM books"
+        )
 
-    publishers = connection.execute(
-        """
-        SELECT COUNT(DISTINCT publisher)
-        FROM books
-        WHERE publisher != ''
-        """
-    ).fetchone()[0]
+        records = [
+            (
+                row["title"],
+                row["author"],
+                row["publisher"],
+                row["language"],
+            )
+            for _, row in dataframe.iterrows()
+        ]
 
-    last_import = connection.execute(
-        """
-        SELECT filename, uploaded_at
-        FROM imports
-        ORDER BY id DESC
-        LIMIT 1
-        """
-    ).fetchone()
+        connection.executemany(
+            """
+            INSERT INTO books (
+                title,
+                author,
+                publisher,
+                language
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            records,
+        )
 
-    connection.close()
+        connection.commit()
 
-    return (
-        books,
-        authors,
-        publishers,
-        last_import,
-    )
+    except Exception:
+
+        connection.rollback()
+        raise
+
+    finally:
+
+        connection.close()
+
+    load_books.clear()
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
-st.html(
+st.markdown(
     f"""
-    <div class="library-header">
+    <div class="hero">
 
-        <div class="main-heading">
-            📚 {safe(APP_TITLE)}
+        <div class="hero-title">
+            {html.escape(APP_TITLE)}
         </div>
 
-        <div class="sub-heading">
-            {safe(APP_SUBTITLE)}
+        <div class="hero-subtitle">
+            {html.escape(APP_SUBTITLE)}
         </div>
 
-        <div class="header-line"></div>
+        <div class="hero-line"></div>
 
     </div>
-    """
+    """,
+    unsafe_allow_html=True,
 )
 
 
 # ============================================================
-# DASHBOARD
+# DATABASE DATA
 # ============================================================
 
-(
-    total_books,
-    total_authors,
-    total_publishers,
-    last_import,
-) = get_statistics()
+rows = load_books()
+
+total_books = len(rows)
+
+authors = {
+    normalize_text(row[2])
+    for row in rows
+    if normalize_text(row[2])
+}
+
+publishers = {
+    normalize_text(row[3])
+    for row in rows
+    if normalize_text(row[3])
+}
+
+languages = {
+    normalize_text(row[4])
+    for row in rows
+    if normalize_text(row[4])
+}
 
 
-st.html(
-    """
-    <div class="section-heading">
-        Library Overview
-    </div>
+# ============================================================
+# NAVIGATION
+# ============================================================
 
-    <div class="section-description">
-        Manage, import and search the Dar Makkah International
-        library catalogue.
-    </div>
-    """
+search_tab, import_tab = st.tabs(
+    [
+        "🔎 Catalogue Search",
+        "📥 Catalogue Management",
+    ]
 )
 
 
-metric1, metric2, metric3 = st.columns(3)
+# ============================================================
+# SEARCH TAB
+# ============================================================
 
+with search_tab:
 
-with metric1:
-
-    st.html(
-        f"""
-        <div class="dashboard-card">
-
-            <div class="dashboard-number">
-                {total_books:,}
-            </div>
-
-            <div class="dashboard-label">
-                Total Books
-            </div>
-
-        </div>
+    st.markdown(
         """
-    )
-
-
-with metric2:
-
-    st.html(
-        f"""
-        <div class="dashboard-card">
-
-            <div class="dashboard-number">
-                {total_authors:,}
-            </div>
-
-            <div class="dashboard-label">
-                Authors
-            </div>
-
-        </div>
-        """
-    )
-
-
-with metric3:
-
-    st.html(
-        f"""
-        <div class="dashboard-card">
-
-            <div class="dashboard-number">
-                {total_publishers:,}
-            </div>
-
-            <div class="dashboard-label">
-                Publishers
-            </div>
-
-        </div>
-        """
-    )
-
-
-# ============================================================
-# PDF IMPORT
-# ============================================================
-
-st.html(
-    """
-    <div class="section-heading">
-        📄 Import Catalogue
-    </div>
-
-    <div class="section-description">
-        Upload your PDF catalogue. The system will extract the
-        book information and prepare it for import into the
-        library database.
-    </div>
-    """
-)
-
-
-st.html(
-    """
-    <div class="upload-card">
-
-        <div class="upload-title">
-            Upload PDF Catalogue
+        <div class="search-title">
+            Search the Library Catalogue
         </div>
 
-        <div class="upload-description">
-            Supported format: PDF
+        <div class="search-help">
+            Search by title, author, publisher or keyword.
+            Arabic and English text are supported.
         </div>
-
-    </div>
-    """
-)
-
-
-uploaded_pdf = st.file_uploader(
-    "Choose your catalogue PDF",
-    type=["pdf"],
-    label_visibility="collapsed",
-)
-
-
-if uploaded_pdf:
-
-    st.success(
-        f"PDF selected: {uploaded_pdf.name}"
+        """,
+        unsafe_allow_html=True,
     )
 
-    with st.spinner(
-        "Reading PDF and extracting catalogue data..."
-    ):
-
-        pdf_text = extract_pdf_text(
-            uploaded_pdf
-        )
-
-    if not pdf_text.strip():
-
-        st.error(
-            "No readable text was found in this PDF. "
-            "The PDF may be scanned or image-based."
-        )
-
-    else:
-
-        extracted_books = (
-            extract_books_from_text(
-                pdf_text
-            )
-        )
-
-        st.html(
-            f"""
-            <div class="info-card">
-
-                <div class="info-title">
-                    Extraction Result
-                </div>
-
-                <div class="info-row">
-                    <span class="info-key">
-                        PDF
-                    </span>
-
-                    <span class="info-value">
-                        {safe(uploaded_pdf.name)}
-                    </span>
-                </div>
-
-                <div class="info-row">
-                    <span class="info-key">
-                        Text extracted
-                    </span>
-
-                    <span class="info-value">
-                        {len(pdf_text):,} characters
-                    </span>
-                </div>
-
-                <div class="info-row">
-                    <span class="info-key">
-                        Books detected
-                    </span>
-
-                    <span class="info-value">
-                        {len(extracted_books):,}
-                    </span>
-                </div>
-
-            </div>
-            """
-        )
-
-        if extracted_books:
-
-            st.subheader(
-                "Preview Extracted Books"
-            )
-
-            st.dataframe(
-                extracted_books,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            st.warning(
-                "Please check the preview before importing "
-                "the records into the database."
-            )
-
-            if st.button(
-                "📥 Import Books into Library",
-                type="primary",
-                use_container_width=True,
-            ):
-
-                with st.spinner(
-                    "Importing books into library.db..."
-                ):
-
-                    added, updated = import_books(
-                        extracted_books,
-                        uploaded_pdf.name,
-                    )
-
-                st.success(
-                    f"Import completed successfully. "
-                    f"{added} new books added and "
-                    f"{updated} existing books updated."
-                )
-
-                st.cache_data.clear()
-
-                st.rerun()
-
-        else:
-
-            st.error(
-                "The PDF text was read successfully, "
-                "but no book records could be detected. "
-                "The catalogue format needs to be configured."
-            )
-
-
-# ============================================================
-# SEARCH
-# ============================================================
-
-st.html(
-    """
-    <div class="section-heading">
-        🔎 Search Library
-    </div>
-
-    <div class="section-description">
-        Search by title, author, publisher or keyword.
-    </div>
-    """
-)
-
-
-search_query = st.text_input(
-    "Search Catalogue",
-    placeholder=(
-        "Enter book title, author, publisher or keyword..."
-    ),
-)
-
-
-if search_query.strip():
-
-    results = search_books(
-        search_query
+    query = st.text_input(
+        "Search",
+        placeholder="e.g. Riyad al-Salihin, Ibn Kathir, Dar al-Fikr...",
+        label_visibility="collapsed",
     )
 
-    if results:
 
-        st.caption(
-            f"{len(results)} matching record(s)"
+    if query.strip():
+
+        results = search_books(
+            query,
+            rows,
         )
 
-        for book in results:
+        if results:
 
-            st.html(
+            st.markdown(
                 f"""
-                <div class="book-card">
+                <div class="section-title">
+                    {len(results)} Matching Record(s)
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-                    <div class="book-title">
-                        {safe(book["title"])}
-                    </div>
+            for book in results:
 
-                    <div>
+                reason = book["reason"]
 
-                        <span class="book-badge">
+                if reason == "Exact Title Match":
+                    match_class = "match-exact"
+
+                elif "Title" in reason:
+                    match_class = "match-title"
+
+                elif "Author" in reason:
+                    match_class = "match-author"
+
+                elif "Publisher" in reason:
+                    match_class = "match-publisher"
+
+                else:
+                    match_class = ""
+
+                st.markdown(
+                    f"""
+                    <div class="book-card">
+
+                        <div class="book-title">
+                            {html.escape(book["title"])}
+                        </div>
+
+                        <span class="badge">
                             Author:
-                            {safe(book["author"] or "—")}
+                            {html.escape(book["author"] or "—")}
                         </span>
 
-                        <span class="book-badge">
+                        <span class="badge">
                             Publisher:
-                            {safe(book["publisher"] or "—")}
+                            {html.escape(book["publisher"] or "—")}
                         </span>
 
-                        <span class="book-badge">
+                        <span class="badge">
                             Language:
-                            {safe(book["language"] or "—")}
+                            {html.escape(book["language"] or "—")}
                         </span>
 
-                        <span class="match-badge">
-                            {safe(book["reason"])}
+                        <span class="match {match_class}">
+                            {html.escape(reason)}
                             · {book["score"]}%
                         </span>
 
                     </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        else:
+
+            st.markdown(
+                """
+                <div class="empty">
+
+                    <div class="empty-icon">
+                        🔍
+                    </div>
+
+                    <div class="empty-title">
+                        No matching books found
+                    </div>
+
+                    <div class="empty-text">
+                        Try another title, author,
+                        publisher or keyword.
+                    </div>
 
                 </div>
-                """
+                """,
+                unsafe_allow_html=True,
             )
 
-            details1, details2 = st.columns(2)
-
-            with details1:
-
-                if book["category"]:
-                    st.markdown(
-                        f"**Category:** "
-                        f"{book['category']}"
-                    )
-
-                if book["isbn"]:
-                    st.markdown(
-                        f"**ISBN:** "
-                        f"{book['isbn']}"
-                    )
-
-            with details2:
-
-                if book["catalogue_number"]:
-                    st.markdown(
-                        f"**Catalogue Number:** "
-                        f"{book['catalogue_number']}"
-                    )
-
-            st.divider()
 
     else:
 
-        st.info(
-            "No matching books found. "
-            "Try another title, author or keyword."
+        st.markdown(
+            """
+            <div class="section-title">
+                Catalogue Overview
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
+        c1, c2, c3, c4 = st.columns(4)
+
+        metrics = [
+            (total_books, "Books"),
+            (len(authors), "Authors"),
+            (len(publishers), "Publishers"),
+            (len(languages), "Languages"),
+        ]
+
+        for column, (number, label) in zip(
+            [c1, c2, c3, c4],
+            metrics,
+        ):
+
+            with column:
+
+                st.markdown(
+                    f"""
+                    <div class="metric-card">
+
+                        <div class="metric-number">
+                            {number:,}
+                        </div>
+
+                        <div class="metric-label">
+                            {label}
+                        </div>
+
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
 
 # ============================================================
-# LAST IMPORT
+# IMPORT TAB
 # ============================================================
 
-if last_import:
+with import_tab:
 
-    st.html(
-        f"""
-        <div class="info-card">
+    st.markdown(
+        """
+        <div class="section-title">
+            Catalogue Management
+        </div>
 
-            <div class="info-title">
-                Latest Catalogue Import
+        <div class="section-description">
+            Upload your Excel catalogue to create or replace
+            the library database.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+    st.markdown(
+        """
+        <div class="import-box">
+
+            <div class="import-title">
+                📊 Import Excel Catalogue
             </div>
 
-            <div class="info-row">
-                <span class="info-key">
-                    File
-                </span>
-
-                <span class="info-value">
-                    {safe(last_import["filename"])}
-                </span>
-            </div>
-
-            <div class="info-row">
-                <span class="info-key">
-                    Imported
-                </span>
-
-                <span class="info-value">
-                    {safe(last_import["uploaded_at"])}
-                </span>
-            </div>
+            <p style="color:#667085;">
+                Recommended columns:
+                <b>Title</b>, <b>Author</b>,
+                <b>Publisher</b>, and optionally
+                <b>Language</b>.
+            </p>
 
         </div>
-        """
+        """,
+        unsafe_allow_html=True,
     )
+
+
+    uploaded_file = st.file_uploader(
+        "Upload Excel catalogue",
+        type=["xlsx", "xls"],
+        help="Upload your library catalogue in Excel format.",
+    )
+
+
+    if uploaded_file:
+
+        dataframe, error = process_excel(
+            uploaded_file
+        )
+
+        if error:
+
+            st.error(error)
+
+        else:
+
+            st.success(
+                f"Excel file successfully read. "
+                f"{len(dataframe):,} book records detected."
+            )
+
+
+            st.markdown(
+                "### Preview"
+            )
+
+            st.dataframe(
+                dataframe.head(10),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+
+            p1, p2, p3 = st.columns(3)
+
+            with p1:
+                st.metric(
+                    "Books Detected",
+                    f"{len(dataframe):,}",
+                )
+
+            with p2:
+                st.metric(
+                    "Authors",
+                    dataframe["author"]
+                    .replace("", pd.NA)
+                    .dropna()
+                    .nunique(),
+                )
+
+            with p3:
+                st.metric(
+                    "Publishers",
+                    dataframe["publisher"]
+                    .replace("", pd.NA)
+                    .dropna()
+                    .nunique(),
+                )
+
+
+            st.warning(
+                "Importing this catalogue will replace "
+                "the current contents of library.db."
+            )
+
+
+            if st.button(
+                "💾 Replace Database with This Catalogue",
+                type="primary",
+                use_container_width=True,
+            ):
+
+                try:
+
+                    replace_database(
+                        dataframe
+                    )
+
+                    st.success(
+                        f"Successfully imported "
+                        f"{len(dataframe):,} books into library.db."
+                    )
+
+                    st.rerun()
+
+                except Exception as exc:
+
+                    st.error(
+                        f"Database update failed: {exc}"
+                    )
+
+
+# ============================================================
+# SYSTEM INFORMATION
+# ============================================================
+
+st.markdown(
+    f"""
+    <div class="system">
+
+        <div class="system-title">
+            System Information
+        </div>
+
+        <div class="system-row">
+            <span class="system-key">
+                Database
+            </span>
+
+            <span class="system-value">
+                {html.escape(DATABASE_FILE.name)}
+            </span>
+        </div>
+
+        <div class="system-row">
+            <span class="system-key">
+                Books Indexed
+            </span>
+
+            <span class="system-value">
+                {total_books:,}
+            </span>
+        </div>
+
+        <div class="system-row">
+            <span class="system-key">
+                Search Engine
+            </span>
+
+            <span class="system-value">
+                Exact + Token + Fuzzy
+            </span>
+        </div>
+
+        <div class="system-row">
+            <span class="system-key">
+                Catalogue Source
+            </span>
+
+            <span class="system-value">
+                Excel
+            </span>
+        </div>
+
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
