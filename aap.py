@@ -15,19 +15,17 @@ from rapidfuzz import fuzz
 APP_TITLE = "Dar Makkah International"
 APP_SUBTITLE = "Library Catalogue Search System"
 
-# Always use the same folder as app.py
 DATABASE_FILE = Path(__file__).resolve().parent / "library.db"
 
 MAX_RESULTS = 100
 
-# Much stricter search settings
-MIN_TITLE_SCORE = 82
-MIN_AUTHOR_SCORE = 88
-MIN_PUBLISHER_SCORE = 92
+MIN_TITLE_SCORE = 72
+MIN_AUTHOR_SCORE = 78
+MIN_PUBLISHER_SCORE = 82
 
 
 # ============================================================
-# PAGE
+# PAGE CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -39,10 +37,634 @@ st.set_page_config(
 
 
 # ============================================================
+# DESIGN / CSS
+# ============================================================
+
+st.markdown(
+    """
+<style>
+
+/* ==========================================================
+   GLOBAL
+   ========================================================== */
+
+.stApp {
+    background: #f4f6f8;
+    color: #172033;
+}
+
+.main .block-container {
+    max-width: 1280px;
+    padding-top: 1.5rem;
+    padding-bottom: 4rem;
+}
+
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
+header {
+    background: transparent !important;
+}
+
+
+/* ==========================================================
+   HERO
+   ========================================================== */
+
+.hero {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(
+            circle at 90% 10%,
+            rgba(196,154,66,0.18),
+            transparent 28%
+        ),
+        linear-gradient(
+            135deg,
+            #0d304c 0%,
+            #123b5d 50%,
+            #1c587c 100%
+        );
+
+    border-radius: 22px;
+    padding: 38px 42px;
+    margin-bottom: 26px;
+
+    box-shadow:
+        0 12px 35px rgba(18,59,93,0.16);
+}
+
+.hero-title {
+    color: white;
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.5px;
+}
+
+.hero-subtitle {
+    color: #dce9f2;
+    font-size: 16px;
+    margin-top: 9px;
+}
+
+.hero-line {
+    width: 70px;
+    height: 4px;
+    background: #d0aa5b;
+    border-radius: 20px;
+    margin-top: 20px;
+}
+
+
+/* ==========================================================
+   SECTION HEADINGS
+   ========================================================== */
+
+.section-title {
+    color: #123b5d;
+    font-size: 25px;
+    font-weight: 800;
+    margin-top: 10px;
+    margin-bottom: 5px;
+}
+
+.section-description {
+    color: #667085;
+    font-size: 14px;
+    margin-bottom: 18px;
+}
+
+
+/* ==========================================================
+   TABS
+   ========================================================== */
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px;
+    background: transparent;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: 48px;
+    padding: 0 20px;
+    border-radius: 10px 10px 0 0;
+    font-weight: 700;
+    color: #667085;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #123b5d !important;
+}
+
+
+/* ==========================================================
+   SEARCH BOX
+   ========================================================== */
+
+.search-wrapper {
+    background: white;
+    border: 1px solid #e4e7ec;
+    border-radius: 16px;
+    padding: 18px 20px 8px 20px;
+    margin-bottom: 24px;
+
+    box-shadow:
+        0 5px 18px rgba(16,24,40,0.05);
+}
+
+.stTextInput input {
+    background: #ffffff !important;
+    color: #172033 !important;
+
+    border: 1px solid #d0d5dd !important;
+    border-radius: 11px !important;
+
+    min-height: 50px !important;
+
+    font-size: 16px !important;
+}
+
+.stTextInput input::placeholder {
+    color: #98a2b3 !important;
+}
+
+.stTextInput input:focus {
+    border-color: #123b5d !important;
+    box-shadow: 0 0 0 1px #123b5d !important;
+}
+
+
+/* ==========================================================
+   METRIC CARDS
+   ========================================================== */
+
+.metric-card {
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    border-radius: 16px;
+
+    padding: 20px 22px;
+
+    min-height: 112px;
+
+    box-shadow:
+        0 5px 18px rgba(16,24,40,0.05);
+
+    transition:
+        transform 0.15s ease,
+        box-shadow 0.15s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 9px 24px rgba(16,24,40,0.08);
+}
+
+.metric-icon {
+    font-size: 21px;
+    margin-bottom: 6px;
+}
+
+.metric-number {
+    color: #123b5d;
+    font-size: 29px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.metric-label {
+    color: #667085;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 7px;
+}
+
+
+/* ==========================================================
+   RESULT HEADER
+   ========================================================== */
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    margin-top: 25px;
+    margin-bottom: 12px;
+}
+
+.result-title {
+    color: #123b5d;
+    font-size: 21px;
+    font-weight: 800;
+}
+
+.result-count {
+    background: #eaf2f7;
+    color: #123b5d;
+
+    border-radius: 20px;
+
+    padding: 6px 12px;
+
+    font-size: 13px;
+    font-weight: 750;
+}
+
+
+/* ==========================================================
+   BOOK CARD
+   ========================================================== */
+
+.book-card {
+    background: #ffffff;
+
+    border: 1px solid #e4e7ec;
+    border-left: 5px solid #c49a42;
+
+    border-radius: 15px;
+
+    padding: 20px 22px;
+
+    margin-bottom: 12px;
+
+    box-shadow:
+        0 4px 15px rgba(16,24,40,0.045);
+}
+
+.book-title {
+    color: #123b5d;
+
+    font-size: 19px;
+    font-weight: 800;
+
+    line-height: 1.4;
+
+    margin-bottom: 13px;
+}
+
+.book-info {
+    color: #475467;
+
+    font-size: 14px;
+
+    margin: 6px 0;
+}
+
+.book-label {
+    color: #123b5d;
+    font-weight: 750;
+}
+
+.book-bottom {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+
+    gap: 8px;
+
+    margin-top: 14px;
+}
+
+.shelf-badge {
+    display: inline-block;
+
+    background: #fff8e8;
+    color: #805f19;
+
+    border: 1px solid #ead49b;
+
+    border-radius: 7px;
+
+    padding: 6px 10px;
+
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.match-badge {
+    display: inline-block;
+
+    background: #eaf2f7;
+    color: #123b5d;
+
+    border: 1px solid #d5e4ed;
+
+    border-radius: 7px;
+
+    padding: 6px 10px;
+
+    font-size: 13px;
+    font-weight: 700;
+}
+
+
+/* ==========================================================
+   EMPTY STATE
+   ========================================================== */
+
+.empty-card {
+    background: white;
+
+    border: 1px solid #e4e7ec;
+
+    border-radius: 16px;
+
+    padding: 45px 30px;
+
+    text-align: center;
+
+    margin-top: 20px;
+
+    box-shadow:
+        0 5px 18px rgba(16,24,40,0.04);
+}
+
+.empty-icon {
+    font-size: 38px;
+}
+
+.empty-title {
+    color: #123b5d;
+
+    font-size: 20px;
+    font-weight: 800;
+
+    margin-top: 9px;
+}
+
+.empty-text {
+    color: #667085;
+
+    font-size: 14px;
+
+    margin-top: 7px;
+}
+
+
+/* ==========================================================
+   MANAGEMENT CARDS
+   ========================================================== */
+
+.management-card {
+    background: #ffffff;
+
+    border: 1px solid #e4e7ec;
+
+    border-radius: 16px;
+
+    padding: 24px;
+
+    margin-bottom: 20px;
+
+    box-shadow:
+        0 5px 18px rgba(16,24,40,0.045);
+}
+
+.management-title {
+    color: #123b5d;
+
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.management-description {
+    color: #667085;
+
+    font-size: 14px;
+
+    margin-top: 5px;
+    margin-bottom: 17px;
+}
+
+
+/* ==========================================================
+   DANGER CARD
+   ========================================================== */
+
+.danger-card {
+    background: #fff8f7;
+
+    border: 1px solid #f3c8c3;
+    border-left: 5px solid #c0392b;
+
+    border-radius: 15px;
+
+    padding: 22px;
+
+    margin-top: 25px;
+    margin-bottom: 22px;
+}
+
+.danger-title {
+    color: #a93226;
+
+    font-size: 19px;
+    font-weight: 800;
+}
+
+.danger-text {
+    color: #7a271a;
+
+    font-size: 14px;
+
+    margin-top: 6px;
+    margin-bottom: 15px;
+}
+
+
+/* ==========================================================
+   SYSTEM INFORMATION
+   ========================================================== */
+
+.system-card {
+    background:
+        linear-gradient(
+            135deg,
+            #0d304c,
+            #123b5d
+        );
+
+    border-radius: 17px;
+
+    padding: 23px 25px;
+
+    margin-top: 30px;
+
+    box-shadow:
+        0 8px 25px rgba(18,59,93,0.12);
+}
+
+.system-title {
+    color: #d9b866;
+
+    font-size: 18px;
+    font-weight: 800;
+
+    margin-bottom: 14px;
+}
+
+.system-row {
+    display: flex;
+    justify-content: space-between;
+
+    gap: 20px;
+
+    padding: 10px 0;
+
+    border-bottom:
+        1px solid rgba(255,255,255,0.10);
+}
+
+.system-row:last-child {
+    border-bottom: none;
+}
+
+.system-key {
+    color: #aebfcd;
+
+    font-size: 13px;
+}
+
+.system-value {
+    color: white;
+
+    font-size: 13px;
+    font-weight: 700;
+
+    text-align: right;
+}
+
+
+/* ==========================================================
+   DATAFRAME
+   ========================================================== */
+
+[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+
+/* ==========================================================
+   BUTTONS
+   ========================================================== */
+
+.stButton > button {
+    border-radius: 10px;
+
+    min-height: 44px;
+
+    font-weight: 750;
+
+    border: 1px solid #d0d5dd;
+}
+
+.stButton > button[kind="primary"] {
+    background: #123b5d;
+    border-color: #123b5d;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background: #0d304c;
+    border-color: #0d304c;
+}
+
+
+/* ==========================================================
+   FILE UPLOADER
+   ========================================================== */
+
+[data-testid="stFileUploader"] {
+    background: #f8fafc;
+
+    border: 1px dashed #b9c7d3;
+
+    border-radius: 12px;
+
+    padding: 8px;
+}
+
+
+/* ==========================================================
+   ALERTS
+   ========================================================== */
+
+.stAlert {
+    border-radius: 10px;
+}
+
+
+/* ==========================================================
+   CHECKBOX
+   ========================================================== */
+
+.stCheckbox label {
+    color: #475467 !important;
+    font-size: 14px !important;
+}
+
+
+/* ==========================================================
+   MOBILE
+   ========================================================== */
+
+@media (max-width: 768px) {
+
+    .main .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .hero {
+        padding: 28px 24px;
+        border-radius: 17px;
+    }
+
+    .hero-title {
+        font-size: 28px;
+    }
+
+    .hero-subtitle {
+        font-size: 14px;
+    }
+
+    .book-card {
+        padding: 17px;
+    }
+
+    .system-row {
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .system-value {
+        text-align: left;
+    }
+
+}
+
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
 # DATABASE
 # ============================================================
 
 def get_connection():
+
     connection = sqlite3.connect(
         DATABASE_FILE,
         timeout=30,
@@ -60,12 +682,6 @@ def create_database():
 
     try:
 
-        # IMPORTANT:
-        # Shelf No. has been added.
-        #
-        # If an old database already exists without shelf_no,
-        # we automatically add the column.
-
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS books (
@@ -79,17 +695,18 @@ def create_database():
             """
         )
 
-        # Check existing columns
-        columns = connection.execute(
-            "PRAGMA table_info(books)"
-        ).fetchall()
+        # ----------------------------------------------------
+        # Upgrade old database automatically
+        # ----------------------------------------------------
 
-        column_names = {
+        columns = [
             row["name"]
-            for row in columns
-        }
+            for row in connection.execute(
+                "PRAGMA table_info(books)"
+            ).fetchall()
+        ]
 
-        if "shelf_no" not in column_names:
+        if "shelf_no" not in columns:
 
             connection.execute(
                 """
@@ -151,7 +768,7 @@ def load_books():
 
 
 # ============================================================
-# DELETE ALL CATALOGUE DATA
+# DELETE ALL DATA
 # ============================================================
 
 def delete_all_books():
@@ -164,14 +781,11 @@ def delete_all_books():
             "DELETE FROM books"
         )
 
-        # Reset ID counter
         try:
 
             connection.execute(
-                """
-                DELETE FROM sqlite_sequence
-                WHERE name = 'books'
-                """
+                "DELETE FROM sqlite_sequence "
+                "WHERE name='books'"
             )
 
         except sqlite3.OperationalError:
@@ -182,6 +796,7 @@ def delete_all_books():
     except Exception:
 
         connection.rollback()
+
         raise
 
     finally:
@@ -201,33 +816,9 @@ def replace_database(dataframe):
 
     try:
 
-        # ----------------------------------------------------
-        # DELETE OLD CATALOGUE
-        # ----------------------------------------------------
-
         connection.execute(
             "DELETE FROM books"
         )
-
-        # ----------------------------------------------------
-        # RESET ID
-        # ----------------------------------------------------
-
-        try:
-
-            connection.execute(
-                """
-                DELETE FROM sqlite_sequence
-                WHERE name = 'books'
-                """
-            )
-
-        except sqlite3.OperationalError:
-            pass
-
-        # ----------------------------------------------------
-        # INSERT NEW CATALOGUE
-        # ----------------------------------------------------
 
         records = []
 
@@ -263,6 +854,7 @@ def replace_database(dataframe):
     except Exception:
 
         connection.rollback()
+
         raise
 
     finally:
@@ -346,20 +938,54 @@ def normalize_text(text):
         flags=re.UNICODE,
     )
 
-    return " ".join(
-        text.split()
-    )
+    return " ".join(text.split())
 
 
 def tokenize(text):
 
     value = normalize_text(text)
 
-    return (
-        value.split()
-        if value
-        else []
+    return value.split() if value else []
+
+
+# ============================================================
+# SHELF NUMBER FORMAT
+# ============================================================
+
+def format_shelf_no(value):
+
+    if value is None:
+        return "—"
+
+    value = str(value).strip()
+
+    if not value:
+        return "—"
+
+    # q2 35
+    # q2-35
+    # q2_35
+    # Q2 35
+    #
+    # All become:
+    # Q2 35
+
+    value = re.sub(
+        r"^\s*q\s*([0-9]+)\s*[-_ ]+\s*([0-9]+)\s*$",
+        r"Q\1 \2",
+        value,
+        flags=re.IGNORECASE,
     )
+
+    # q2 35 without separator
+    value = re.sub(
+        r"^\s*q\s*([0-9]+)\s+([0-9]+)\s*$",
+        r"Q\1 \2",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+    return value
 
 
 # ============================================================
@@ -381,6 +1007,7 @@ def phrase_contains(query, field):
 def exact_token_match(query, field):
 
     query_tokens = tokenize(query)
+
     field_tokens = set(
         tokenize(field)
     )
@@ -405,21 +1032,19 @@ def fuzzy_score(query, field):
     if q == f:
         return 100
 
-    # For very short searches we do NOT use
-    # partial_ratio because it creates too many
-    # irrelevant matches.
-    if len(q) < 4:
-        return fuzz.ratio(q, f)
+    if q in f:
+        return 98
 
     return max(
         fuzz.ratio(q, f),
+        fuzz.partial_ratio(q, f),
         fuzz.token_set_ratio(q, f),
         fuzz.WRatio(q, f),
     )
 
 
 # ============================================================
-# STRICT SEARCH
+# SEARCH MATCHING
 # ============================================================
 
 def field_match(
@@ -434,197 +1059,104 @@ def field_match(
     if not q:
         return None, 0
 
-    title_n = normalize_text(title)
-    author_n = normalize_text(author)
-    publisher_n = normalize_text(publisher)
+    # --------------------------------------------------------
+    # TITLE
+    # --------------------------------------------------------
 
-    query_tokens = tokenize(q)
+    normalized_title = normalize_text(title)
 
-    # ========================================================
-    # 1. EXACT TITLE
-    # ========================================================
-
-    if q == title_n:
+    if q == normalized_title:
 
         return (
             "Exact Title Match",
             100,
         )
 
-    # ========================================================
-    # 2. TITLE PHRASE
-    # ========================================================
-
-    if phrase_contains(q, title_n):
+    if phrase_contains(q, title):
 
         return (
             "Title Match",
             98,
         )
 
-    # ========================================================
-    # 3. TITLE WORD MATCH
-    #
-    # All query words must appear in title.
-    # ========================================================
+    if exact_token_match(q, title):
 
-    if query_tokens:
-
-        title_tokens = set(
-            tokenize(title_n)
+        return (
+            "Title Keyword Match",
+            96,
         )
 
-        if all(
-            token in title_tokens
-            for token in query_tokens
-        ):
+    title_score = fuzzy_score(
+        q,
+        title,
+    )
 
-            return (
-                "Title Keyword Match",
-                96,
-            )
+    if title_score >= MIN_TITLE_SCORE:
 
-    # ========================================================
-    # 4. FUZZY TITLE
-    #
-    # Only allow fuzzy title matches for queries
-    # of 4+ characters.
-    # ========================================================
-
-    if len(q) >= 4:
-
-        score = fuzz.WRatio(
-            q,
-            title_n,
+        return (
+            "Strong Title Match",
+            title_score,
         )
 
-        # Long queries need stronger matching.
-        if len(q) >= 8:
+    # --------------------------------------------------------
+    # AUTHOR
+    # --------------------------------------------------------
 
-            threshold = 85
+    if phrase_contains(q, author):
 
-        else:
-
-            threshold = MIN_TITLE_SCORE
-
-        if score >= threshold:
-
-            return (
-                "Strong Title Match",
-                score,
-            )
-
-    # ========================================================
-    # 5. EXACT AUTHOR PHRASE
-    # ========================================================
-
-    if author_n:
-
-        if q == author_n:
-
-            return (
-                "Exact Author Match",
-                100,
-            )
-
-        if phrase_contains(
-            q,
-            author_n,
-        ):
-
-            return (
-                "Author Match",
-                94,
-            )
-
-        author_tokens = set(
-            tokenize(author_n)
+        return (
+            "Author Match",
+            94,
         )
 
-        if query_tokens and all(
-            token in author_tokens
-            for token in query_tokens
-        ):
+    if exact_token_match(q, author):
 
-            return (
-                "Author Keyword Match",
-                92,
-            )
-
-    # ========================================================
-    # 6. FUZZY AUTHOR
-    # ========================================================
-
-    if author_n and len(q) >= 5:
-
-        score = fuzz.WRatio(
-            q,
-            author_n,
+        return (
+            "Author Keyword Match",
+            92,
         )
 
-        if score >= MIN_AUTHOR_SCORE:
+    author_score = fuzzy_score(
+        q,
+        author,
+    )
 
-            return (
-                "Author Match",
-                score,
-            )
+    if author_score >= MIN_AUTHOR_SCORE:
 
-    # ========================================================
-    # 7. PUBLISHER
-    #
-    # Publisher fuzzy matching is intentionally strict.
-    # ========================================================
-
-    if publisher_n:
-
-        if q == publisher_n:
-
-            return (
-                "Exact Publisher Match",
-                100,
-            )
-
-        if phrase_contains(
-            q,
-            publisher_n,
-        ):
-
-            return (
-                "Publisher Match",
-                91,
-            )
-
-        publisher_tokens = set(
-            tokenize(publisher_n)
+        return (
+            "Author Match",
+            author_score * 0.96,
         )
 
-        if query_tokens and all(
-            token in publisher_tokens
-            for token in query_tokens
-        ):
+    # --------------------------------------------------------
+    # PUBLISHER
+    # --------------------------------------------------------
 
-            return (
-                "Publisher Keyword Match",
-                89,
-            )
+    if phrase_contains(q, publisher):
 
-    # ========================================================
-    # 8. FUZZY PUBLISHER
-    # ========================================================
-
-    if publisher_n and len(q) >= 6:
-
-        score = fuzz.WRatio(
-            q,
-            publisher_n,
+        return (
+            "Publisher Match",
+            91,
         )
 
-        if score >= MIN_PUBLISHER_SCORE:
+    if exact_token_match(q, publisher):
 
-            return (
-                "Publisher Match",
-                score,
-            )
+        return (
+            "Publisher Keyword Match",
+            89,
+        )
+
+    publisher_score = fuzzy_score(
+        q,
+        publisher,
+    )
+
+    if publisher_score >= MIN_PUBLISHER_SCORE:
+
+        return (
+            "Publisher Match",
+            publisher_score * 0.94,
+        )
 
     return None, 0
 
@@ -634,14 +1166,6 @@ def field_match(
 # ============================================================
 
 def search_books(query, rows):
-
-    query_normalized = normalize_text(
-        query
-    )
-
-    if not query_normalized:
-
-        return []
 
     results = []
 
@@ -657,14 +1181,13 @@ def search_books(query, rows):
         ) = row
 
         reason, score = field_match(
-            query_normalized,
+            query,
             title,
             author,
             publisher,
         )
 
-        if reason is None:
-
+        if not reason:
             continue
 
         results.append(
@@ -675,15 +1198,11 @@ def search_books(query, rows):
                 "publisher": publisher,
                 "language": language,
                 "shelf_no": shelf_no,
-                "score": round(
-                    score,
-                    1,
-                ),
+                "score": round(score, 1),
                 "reason": reason,
             }
         )
 
-    # Best matches first
     priority = {
 
         "Exact Title Match": 0,
@@ -694,17 +1213,13 @@ def search_books(query, rows):
 
         "Strong Title Match": 3,
 
-        "Exact Author Match": 4,
+        "Author Match": 4,
 
-        "Author Match": 5,
+        "Author Keyword Match": 5,
 
-        "Author Keyword Match": 6,
+        "Publisher Match": 6,
 
-        "Exact Publisher Match": 7,
-
-        "Publisher Match": 8,
-
-        "Publisher Keyword Match": 9,
+        "Publisher Keyword Match": 7,
     }
 
     results.sort(
@@ -720,19 +1235,14 @@ def search_books(query, rows):
         )
     )
 
-    return results[
-        :MAX_RESULTS
-    ]
+    return results[:MAX_RESULTS]
 
 
 # ============================================================
 # EXCEL COLUMN FINDER
 # ============================================================
 
-def find_column(
-    columns,
-    names,
-):
+def find_column(columns, names):
 
     normalized_columns = {
         normalize_text(column): column
@@ -745,10 +1255,7 @@ def find_column(
             name
         )
 
-        if (
-            normalized_name
-            in normalized_columns
-        ):
+        if normalized_name in normalized_columns:
 
             return normalized_columns[
                 normalized_name
@@ -761,9 +1268,7 @@ def find_column(
 # PROCESS EXCEL
 # ============================================================
 
-def process_excel(
-    uploaded_file,
-):
+def process_excel(uploaded_file):
 
     try:
 
@@ -773,16 +1278,14 @@ def process_excel(
 
     except Exception as exc:
 
-        return (
-            None,
-            f"Unable to read Excel file: {exc}",
+        return None, (
+            f"Unable to read Excel file: {exc}"
         )
 
     if dataframe.empty:
 
-        return (
-            None,
-            "The Excel file is empty.",
+        return None, (
+            "The Excel file is empty."
         )
 
     dataframe = dataframe.dropna(
@@ -790,9 +1293,9 @@ def process_excel(
         how="all",
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # TITLE
-    # ========================================================
+    # --------------------------------------------------------
 
     title_column = find_column(
         dataframe.columns,
@@ -808,9 +1311,9 @@ def process_excel(
         ],
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # AUTHOR
-    # ========================================================
+    # --------------------------------------------------------
 
     author_column = find_column(
         dataframe.columns,
@@ -823,9 +1326,9 @@ def process_excel(
         ],
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # PUBLISHER
-    # ========================================================
+    # --------------------------------------------------------
 
     publisher_column = find_column(
         dataframe.columns,
@@ -838,9 +1341,9 @@ def process_excel(
         ],
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # LANGUAGE
-    # ========================================================
+    # --------------------------------------------------------
 
     language_column = find_column(
         dataframe.columns,
@@ -851,52 +1354,40 @@ def process_excel(
         ],
     )
 
-    # ========================================================
+    # --------------------------------------------------------
     # SHELF NUMBER
-    # ========================================================
+    # --------------------------------------------------------
 
     shelf_column = find_column(
         dataframe.columns,
         [
-            "shelf no",
-            "shelf no.",
-            "shelf number",
             "shelf",
+            "shelf no",
+            "shelf number",
             "shelf_no",
             "shelfno",
             "location",
             "call number",
             "call no",
-            "call no.",
+            "shelf location",
             "رف",
             "رقم الرف",
             "رقم الرفوف",
-            "موقع الرف",
+            "مكان الرف",
         ],
     )
 
     if title_column is None:
 
-        return (
-            None,
+        return None, (
             "Could not find a Title column. "
-            "Please make sure your Excel file has "
-            "a column named Title or Book Title.",
+            "Please name it 'Title' or "
+            "'Book Title'."
         )
 
-    if shelf_column is None:
-
-        return (
-            None,
-            "Could not find the Shelf No. column. "
-            "Please name it 'Shelf No', "
-            "'Shelf No.', 'Shelf Number', "
-            "'Shelf' or 'رقم الرف'.",
-        )
-
-    # ========================================================
-    # CLEAN DATA
-    # ========================================================
+    # --------------------------------------------------------
+    # CLEAN DATAFRAME
+    # --------------------------------------------------------
 
     clean = pd.DataFrame()
 
@@ -946,31 +1437,31 @@ def process_excel(
 
         clean["language"] = ""
 
-    # ========================================================
-    # SHELF NUMBER
-    # ========================================================
+    if shelf_column is not None:
 
-    clean["shelf_no"] = (
-        dataframe[shelf_column]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+        clean["shelf_no"] = (
+            dataframe[shelf_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .map(format_shelf_no)
+        )
 
-    # ========================================================
+    else:
+
+        clean["shelf_no"] = ""
+
+    # --------------------------------------------------------
     # REMOVE EMPTY TITLES
-    # ========================================================
+    # --------------------------------------------------------
 
     clean = clean[
         clean["title"].str.strip() != ""
     ]
 
-    # ========================================================
+    # --------------------------------------------------------
     # REMOVE DUPLICATES
-    #
-    # Include shelf number because two physical copies
-    # can legitimately have different shelf locations.
-    # ========================================================
+    # --------------------------------------------------------
 
     clean["_key"] = (
         clean["title"].map(normalize_text)
@@ -978,8 +1469,6 @@ def process_excel(
         + clean["author"].map(normalize_text)
         + "|"
         + clean["publisher"].map(normalize_text)
-        + "|"
-        + clean["language"].map(normalize_text)
         + "|"
         + clean["shelf_no"].map(normalize_text)
     )
@@ -998,9 +1487,8 @@ def process_excel(
 
     if clean.empty:
 
-        return (
-            None,
-            "No valid book records were found.",
+        return None, (
+            "No valid book records were found."
         )
 
     return clean, None
@@ -1032,24 +1520,29 @@ languages = {
     if normalize_text(row[4])
 }
 
-shelves = {
-    normalize_text(row[5])
-    for row in rows
-    if normalize_text(row[5])
-}
-
 
 # ============================================================
-# HEADER
+# HERO
 # ============================================================
 
-st.title(APP_TITLE)
+st.markdown(
+    f"""
+    <div class="hero">
 
-st.caption(
-    APP_SUBTITLE
+        <div class="hero-title">
+            📚 {APP_TITLE}
+        </div>
+
+        <div class="hero-subtitle">
+            {APP_SUBTITLE}
+        </div>
+
+        <div class="hero-line"></div>
+
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
-
-st.divider()
 
 
 # ============================================================
@@ -1058,8 +1551,8 @@ st.divider()
 
 search_tab, management_tab = st.tabs(
     [
-        "🔎 Catalogue Search",
-        "📥 Catalogue Management",
+        "🔎  Catalogue Search",
+        "📥  Catalogue Management",
     ]
 )
 
@@ -1070,21 +1563,45 @@ search_tab, management_tab = st.tabs(
 
 with search_tab:
 
-    st.header(
-        "Search the Library Catalogue"
+    st.markdown(
+        """
+        <div class="section-title">
+            Search the Library Catalogue
+        </div>
+
+        <div class="section-description">
+            Search by book title, author or publisher.
+            Arabic and English text are supported.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    st.write(
-        "Search by book title, author or publisher. "
-        "Arabic and English text are supported."
+    # --------------------------------------------------------
+    # SEARCH BOX
+    # --------------------------------------------------------
+
+    st.markdown(
+        '<div class="search-wrapper">',
+        unsafe_allow_html=True,
     )
 
     query = st.text_input(
         "Catalogue Search",
         placeholder=(
-            "Enter book title, author or publisher..."
+            "🔎  Enter title, author or publisher..."
         ),
+        label_visibility="collapsed",
     )
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # --------------------------------------------------------
+    # RESULTS
+    # --------------------------------------------------------
 
     if query.strip():
 
@@ -1095,125 +1612,198 @@ with search_tab:
 
         if results:
 
-            st.subheader(
-                f"{len(results)} Matching Record(s)"
+            st.markdown(
+                f"""
+                <div class="result-header">
+
+                    <div class="result-title">
+                        Search Results
+                    </div>
+
+                    <div class="result-count">
+                        {len(results)} result(s)
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
             for book in results:
 
-                with st.container(
-                    border=True
-                ):
+                title = str(
+                    book["title"] or "Untitled"
+                )
 
-                    # -------------------------------
-                    # TITLE
-                    # -------------------------------
+                author = str(
+                    book["author"] or "—"
+                )
 
-                    st.subheader(
-                        str(book["title"])
-                    )
+                publisher = str(
+                    book["publisher"] or "—"
+                )
 
-                    # -------------------------------
-                    # SHELF NUMBER
-                    # -------------------------------
+                language = str(
+                    book["language"] or "—"
+                )
 
-                    shelf_value = (
-                        book["shelf_no"]
-                        or "Not specified"
-                    )
+                shelf = format_shelf_no(
+                    book["shelf_no"]
+                )
 
-                    st.write(
-                        f"📍 **Shelf No.:** "
-                        f"{shelf_value}"
-                    )
+                reason = str(
+                    book["reason"]
+                )
 
-                    # -------------------------------
-                    # AUTHOR
-                    # -------------------------------
+                score = book["score"]
 
-                    st.write(
-                        f"**Author:** "
-                        f"{book['author'] or '—'}"
-                    )
+                st.markdown(
+                    f"""
+                    <div class="book-card">
 
-                    # -------------------------------
-                    # PUBLISHER
-                    # -------------------------------
+                        <div class="book-title">
+                            {title}
+                        </div>
 
-                    st.write(
-                        f"**Publisher:** "
-                        f"{book['publisher'] or '—'}"
-                    )
+                        <div class="book-info">
+                            <span class="book-label">
+                                Author:
+                            </span>
+                            {author}
+                        </div>
 
-                    # -------------------------------
-                    # LANGUAGE
-                    # -------------------------------
+                        <div class="book-info">
+                            <span class="book-label">
+                                Publisher:
+                            </span>
+                            {publisher}
+                        </div>
 
-                    st.write(
-                        f"**Language:** "
-                        f"{book['language'] or '—'}"
-                    )
+                        <div class="book-info">
+                            <span class="book-label">
+                                Language:
+                            </span>
+                            {language}
+                        </div>
 
-                    # -------------------------------
-                    # MATCH
-                    # -------------------------------
+                        <div class="book-bottom">
 
-                    st.caption(
-                        f"Match: "
-                        f"{book['reason']} "
-                        f"({book['score']}%)"
-                    )
+                            <span class="shelf-badge">
+                                📍 Shelf {shelf}
+                            </span>
+
+                            <span class="match-badge">
+                                {reason} · {score}%
+                            </span>
+
+                        </div>
+
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         else:
 
-            st.info(
-                "No matching books found. "
-                "Try the complete book title, "
-                "author name or publisher."
+            st.markdown(
+                """
+                <div class="empty-card">
+
+                    <div class="empty-icon">
+                        🔍
+                    </div>
+
+                    <div class="empty-title">
+                        No matching books found
+                    </div>
+
+                    <div class="empty-text">
+                        Try another title, author
+                        or publisher.
+                    </div>
+
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
+
+    # --------------------------------------------------------
+    # OVERVIEW
+    # --------------------------------------------------------
 
     else:
 
-        st.subheader(
-            "Catalogue Overview"
+        st.markdown(
+            """
+            <div class="section-title">
+                Catalogue Overview
+            </div>
+
+            <div class="section-description">
+                Current catalogue statistics.
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
 
-        with c1:
-
-            st.metric(
-                "Books",
+        metrics = [
+            (
+                c1,
+                "📚",
                 f"{total_books:,}",
-            )
-
-        with c2:
-
-            st.metric(
-                "Authors",
+                "Books",
+            ),
+            (
+                c2,
+                "✍️",
                 f"{len(authors):,}",
-            )
-
-        with c3:
-
-            st.metric(
-                "Publishers",
+                "Authors",
+            ),
+            (
+                c3,
+                "🏢",
                 f"{len(publishers):,}",
-            )
-
-        with c4:
-
-            st.metric(
-                "Languages",
+                "Publishers",
+            ),
+            (
+                c4,
+                "🌐",
                 f"{len(languages):,}",
-            )
+                "Languages",
+            ),
+        ]
 
-        with c5:
+        for (
+            column,
+            icon,
+            number,
+            label,
+        ) in metrics:
 
-            st.metric(
-                "Shelf Locations",
-                f"{len(shelves):,}",
-            )
+            with column:
+
+                st.markdown(
+                    f"""
+                    <div class="metric-card">
+
+                        <div class="metric-icon">
+                            {icon}
+                        </div>
+
+                        <div class="metric-number">
+                            {number}
+                        </div>
+
+                        <div class="metric-label">
+                            {label}
+                        </div>
+
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
 
 # ============================================================
@@ -1222,79 +1812,48 @@ with search_tab:
 
 with management_tab:
 
-    st.header(
-        "Catalogue Management"
-    )
+    st.markdown(
+        """
+        <div class="section-title">
+            Catalogue Management
+        </div>
 
-    st.write(
-        "Upload your monthly Excel catalogue. "
-        "The new Excel file completely replaces "
-        "the existing catalogue."
+        <div class="section-description">
+            Manage your monthly Excel catalogue.
+            Importing a new file replaces the
+            previous catalogue.
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     # ========================================================
-    # DELETE
+    # IMPORT
     # ========================================================
 
-    st.subheader(
-        "🗑️ Delete Current Catalogue"
-    )
+    st.markdown(
+        """
+        <div class="management-card">
 
-    st.warning(
-        "This will permanently remove every book "
-        "currently stored in library.db. "
-        "The database itself will remain available "
-        "so you can import a new catalogue."
-    )
+            <div class="management-title">
+                📊 Monthly Catalogue Import
+            </div>
 
-    delete_confirmation = st.checkbox(
-        "I understand that all current catalogue records will be deleted."
-    )
+            <div class="management-description">
+                Upload your latest Excel catalogue.
+                The existing catalogue will be replaced
+                when you confirm the import.
+            </div>
 
-    if st.button(
-        "🗑️ Delete All Catalogue Data",
-        disabled=not delete_confirmation,
-        use_container_width=True,
-    ):
-
-        try:
-
-            delete_all_books()
-
-            st.success(
-                "All catalogue data has been deleted. "
-                "The database is now empty."
-            )
-
-            st.rerun()
-
-        except Exception as exc:
-
-            st.error(
-                f"Could not delete catalogue: {exc}"
-            )
-
-    st.divider()
-
-    # ========================================================
-    # EXCEL UPLOAD
-    # ========================================================
-
-    st.subheader(
-        "📊 Upload Monthly Excel Catalogue"
-    )
-
-    st.write(
-        "Required columns:"
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.info(
-        "Title + Shelf No."
-    )
-
-    st.write(
-        "Optional columns: "
-        "Author, Publisher and Language."
+        "Required column: Title  •  "
+        "Optional: Author, Publisher, Language, "
+        "Shelf No."
     )
 
     uploaded_file = st.file_uploader(
@@ -1303,9 +1862,7 @@ with management_tab:
             "xlsx",
             "xls",
         ],
-        help=(
-            "Upload the monthly library catalogue."
-        ),
+        help="Upload the latest monthly catalogue.",
     )
 
     if uploaded_file:
@@ -1321,16 +1878,21 @@ with management_tab:
         else:
 
             st.success(
-                f"{len(dataframe):,} "
-                "valid book records detected."
+                f"{len(dataframe):,} valid "
+                "book records detected."
             )
 
             # ------------------------------------------------
-            # DETECTED COLUMNS
+            # PREVIEW
             # ------------------------------------------------
 
-            st.subheader(
-                "Imported Catalogue"
+            st.markdown(
+                """
+                <div class="section-title">
+                    Catalogue Preview
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
             st.dataframe(
@@ -1340,7 +1902,7 @@ with management_tab:
             )
 
             # ------------------------------------------------
-            # METRICS
+            # IMPORT METRICS
             # ------------------------------------------------
 
             c1, c2, c3, c4 = st.columns(4)
@@ -1394,23 +1956,14 @@ with management_tab:
                     f"{shelf_count:,}",
                 )
 
-            # ------------------------------------------------
-            # REPLACE WARNING
-            # ------------------------------------------------
-
             st.warning(
-                f"This will replace the existing "
-                f"{total_books:,} books with the "
-                f"{len(dataframe):,} books from this "
-                "Excel file."
+                f"This will replace the current "
+                f"{total_books:,} books with "
+                f"{len(dataframe):,} books."
             )
 
-            # ------------------------------------------------
-            # IMPORT
-            # ------------------------------------------------
-
             if st.button(
-                "💾 Replace Catalogue With This Excel File",
+                "💾  Replace Catalogue",
                 type="primary",
                 use_container_width=True,
             ):
@@ -1422,9 +1975,7 @@ with management_tab:
                     )
 
                     st.success(
-                        "Catalogue successfully replaced. "
-                        "The old catalogue has been removed "
-                        "and the new Excel catalogue is now active."
+                        "Catalogue successfully replaced."
                     )
 
                     st.rerun()
@@ -1435,58 +1986,130 @@ with management_tab:
                         f"Database update failed: {exc}"
                     )
 
+    # ========================================================
+    # DELETE
+    # ========================================================
+
+    st.markdown(
+        """
+        <div class="danger-card">
+
+            <div class="danger-title">
+                🗑️ Delete Current Catalogue
+            </div>
+
+            <div class="danger-text">
+                This permanently removes all books
+                currently stored in library.db.
+                The database itself remains available
+                for the next Excel import.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    delete_confirmation = st.checkbox(
+        "I understand that all current catalogue records will be deleted."
+    )
+
+    if st.button(
+        "🗑️  Delete All Catalogue Data",
+        disabled=not delete_confirmation,
+        use_container_width=True,
+    ):
+
+        try:
+
+            delete_all_books()
+
+            st.success(
+                "All catalogue data has been deleted."
+            )
+
+            st.rerun()
+
+        except Exception as exc:
+
+            st.error(
+                f"Could not delete catalogue: {exc}"
+            )
+
 
 # ============================================================
 # SYSTEM INFORMATION
 # ============================================================
 
-st.divider()
+st.markdown(
+    f"""
+    <div class="system-card">
 
-st.subheader(
-    "System Information"
+        <div class="system-title">
+            ⚙️ System Information
+        </div>
+
+        <div class="system-row">
+
+            <span class="system-key">
+                Database
+            </span>
+
+            <span class="system-value">
+                {DATABASE_FILE.name}
+            </span>
+
+        </div>
+
+        <div class="system-row">
+
+            <span class="system-key">
+                Books Indexed
+            </span>
+
+            <span class="system-value">
+                {total_books:,}
+            </span>
+
+        </div>
+
+        <div class="system-row">
+
+            <span class="system-key">
+                Search Engine
+            </span>
+
+            <span class="system-value">
+                Exact + Token + Fuzzy
+            </span>
+
+        </div>
+
+        <div class="system-row">
+
+            <span class="system-key">
+                Catalogue Source
+            </span>
+
+            <span class="system-value">
+                Excel
+            </span>
+
+        </div>
+
+        <div class="system-row">
+
+            <span class="system-key">
+                Database Location
+            </span>
+
+            <span class="system-value">
+                {str(DATABASE_FILE)}
+            </span>
+
+        </div>
+
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
-
-info1, info2, info3, info4 = st.columns(4)
-
-with info1:
-
-    st.write(
-        "**Database**"
-    )
-
-    st.write(
-        DATABASE_FILE.name
-    )
-
-
-with info2:
-
-    st.write(
-        "**Database Location**"
-    )
-
-    st.code(
-        str(DATABASE_FILE)
-    )
-
-
-with info3:
-
-    st.write(
-        "**Books Indexed**"
-    )
-
-    st.write(
-        f"{total_books:,}"
-    )
-
-
-with info4:
-
-    st.write(
-        "**Search Engine**"
-    )
-
-    st.write(
-        "Exact + Strict Fuzzy"
-    )
