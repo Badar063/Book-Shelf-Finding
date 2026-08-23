@@ -1,4 +1,3 @@
-import html
 import re
 import sqlite3
 import unicodedata
@@ -26,7 +25,7 @@ MIN_PUBLISHER_SCORE = 82
 
 
 # ============================================================
-# STREAMLIT
+# STREAMLIT CONFIG
 # ============================================================
 
 st.set_page_config(
@@ -38,27 +37,32 @@ st.set_page_config(
 
 
 # ============================================================
-# PROFESSIONAL LIGHT UI
+# CUSTOM CSS
 # ============================================================
 
 st.markdown(
     """
     <style>
 
-    /* ---------- GLOBAL ---------- */
+    /* ========================================================
+       GLOBAL
+       ======================================================== */
 
     .stApp {
-        background: #F5F7FA;
+        background-color: #F6F8FB;
         color: #172033;
     }
 
     .main .block-container {
-        max-width: 1250px;
+        max-width: 1200px;
         padding-top: 2rem;
         padding-bottom: 4rem;
     }
 
-    #MainMenu,
+    #MainMenu {
+        visibility: hidden;
+    }
+
     footer {
         visibility: hidden;
     }
@@ -68,278 +72,208 @@ st.markdown(
     }
 
 
-    /* ---------- HEADER ---------- */
+    /* ========================================================
+       HEADER
+       ======================================================== */
 
-    .hero {
-        background: linear-gradient(
-            135deg,
-            #12304A 0%,
-            #174E70 100%
-        );
-
-        border-radius: 18px;
-        padding: 2.2rem 2rem;
-        margin-bottom: 1.8rem;
-
-        box-shadow: 0 8px 30px rgba(18, 48, 74, 0.15);
+    .hero-box {
+        background: #123B5D;
+        border-radius: 16px;
+        padding: 32px;
+        margin-bottom: 28px;
+        box-shadow: 0 8px 25px rgba(18, 59, 93, 0.12);
     }
 
-    .hero-title {
-        color: white;
-        font-size: 2.35rem;
+    .hero-title-text {
+        color: #FFFFFF;
+        font-size: 36px;
         font-weight: 800;
+        line-height: 1.2;
         margin: 0;
-        letter-spacing: .3px;
     }
 
-    .hero-subtitle {
-        color: #D9E8F2;
-        font-size: 1.05rem;
-        margin-top: .5rem;
+    .hero-subtitle-text {
+        color: #DCE8F0;
+        font-size: 17px;
+        margin-top: 8px;
     }
 
-    .hero-line {
-        width: 70px;
+    .gold-line {
+        width: 65px;
         height: 4px;
-        background: #C69A3A;
-        border-radius: 5px;
-        margin-top: 1rem;
+        background: #C49A42;
+        border-radius: 10px;
+        margin-top: 18px;
     }
 
 
-    /* ---------- SEARCH ---------- */
+    /* ========================================================
+       SECTION HEADINGS
+       ======================================================== */
 
-    .search-title {
-        color: #12304A;
-        font-size: 1.25rem;
+    .section-title-text {
+        color: #123B5D;
+        font-size: 24px;
         font-weight: 750;
-        margin-bottom: .5rem;
+        margin-top: 15px;
+        margin-bottom: 5px;
     }
 
-    .search-help {
+    .section-description-text {
         color: #667085;
-        margin-bottom: .8rem;
+        font-size: 15px;
+        margin-bottom: 18px;
     }
 
-    .stTextInput > div > div > input {
-        background: white !important;
-        color: #172033 !important;
 
+    /* ========================================================
+       SEARCH INPUT
+       ======================================================== */
+
+    .stTextInput input {
+        background-color: #FFFFFF !important;
+        color: #172033 !important;
         border: 1px solid #D0D5DD !important;
         border-radius: 10px !important;
-
-        padding: 13px !important;
-        font-size: 1rem !important;
+        min-height: 48px !important;
     }
 
-    .stTextInput > div > div > input:focus {
-        border-color: #174E70 !important;
-        box-shadow: 0 0 0 1px #174E70 !important;
+    .stTextInput input:focus {
+        border-color: #123B5D !important;
+        box-shadow: 0 0 0 1px #123B5D !important;
     }
 
 
-    /* ---------- METRICS ---------- */
+    /* ========================================================
+       METRIC CARDS
+       ======================================================== */
 
-    .metric-card {
-        background: white;
+    .metric-box {
+        background: #FFFFFF;
         border: 1px solid #E4E7EC;
         border-radius: 14px;
-
-        padding: 1.25rem;
-
-        box-shadow: 0 3px 12px rgba(16, 24, 40, .05);
+        padding: 22px;
+        min-height: 105px;
+        box-shadow: 0 3px 12px rgba(16, 24, 40, 0.05);
     }
 
-    .metric-number {
-        color: #174E70;
-        font-size: 1.9rem;
+    .metric-number-text {
+        color: #123B5D;
+        font-size: 30px;
         font-weight: 800;
     }
 
-    .metric-label {
+    .metric-label-text {
         color: #667085;
-        font-size: .86rem;
-        margin-top: .2rem;
+        font-size: 14px;
+        margin-top: 3px;
     }
 
 
-    /* ---------- RESULT ---------- */
+    /* ========================================================
+       BOOK CARD
+       ======================================================== */
 
-    .book-card {
-        background: white;
-
+    .book-box {
+        background: #FFFFFF;
         border: 1px solid #E4E7EC;
-        border-left: 4px solid #C69A3A;
-
+        border-left: 4px solid #C49A42;
         border-radius: 12px;
-
-        padding: 1.2rem 1.3rem;
-
-        margin: 1rem 0 .45rem 0;
-
-        box-shadow: 0 4px 14px rgba(16, 24, 40, .06);
+        padding: 20px;
+        margin-top: 14px;
+        margin-bottom: 8px;
+        box-shadow: 0 4px 14px rgba(16, 24, 40, 0.05);
     }
 
-    .book-title {
-        color: #12304A;
-        font-size: 1.25rem;
+    .book-title-text {
+        color: #123B5D;
+        font-size: 20px;
         font-weight: 750;
         line-height: 1.4;
-        margin-bottom: .7rem;
+        margin-bottom: 12px;
     }
 
-    .badge {
-        display: inline-block;
-
-        background: #F2F4F7;
+    .book-info {
         color: #475467;
-
-        border: 1px solid #E4E7EC;
-
-        border-radius: 6px;
-
-        padding: 4px 9px;
-
-        margin-right: 5px;
-        margin-bottom: 4px;
-
-        font-size: .78rem;
-        font-weight: 600;
-    }
-
-    .match {
-        display: inline-block;
-
-        background: #174E70;
-        color: white;
-
-        border-radius: 6px;
-
-        padding: 4px 9px;
-
-        font-size: .78rem;
-        font-weight: 650;
-    }
-
-    .match-exact {
-        background: #18794E;
-    }
-
-    .match-title {
-        background: #1769AA;
-    }
-
-    .match-author {
-        background: #087F8C;
-    }
-
-    .match-publisher {
-        background: #9A6F00;
+        font-size: 14px;
+        margin-top: 5px;
     }
 
 
-    /* ---------- SECTION ---------- */
-
-    .section-title {
-        color: #12304A;
-        font-size: 1.3rem;
-        font-weight: 750;
-
-        border-left: 4px solid #C69A3A;
-
-        padding-left: .7rem;
-
-        margin-top: 1.8rem;
-        margin-bottom: .5rem;
-    }
-
-    .section-description {
-        color: #667085;
-        margin-bottom: 1rem;
-    }
-
-
-    /* ---------- IMPORT ---------- */
+    /* ========================================================
+       IMPORT
+       ======================================================== */
 
     .import-box {
-        background: white;
-
+        background: #FFFFFF;
         border: 1px solid #E4E7EC;
         border-radius: 14px;
-
-        padding: 1.4rem;
-
-        box-shadow: 0 3px 12px rgba(16, 24, 40, .05);
+        padding: 22px;
+        margin-bottom: 18px;
+        box-shadow: 0 3px 12px rgba(16, 24, 40, 0.05);
     }
 
-    .import-title {
-        color: #12304A;
-        font-size: 1.15rem;
+    .import-title-text {
+        color: #123B5D;
+        font-size: 20px;
         font-weight: 750;
     }
 
-
-    /* ---------- EMPTY ---------- */
-
-    .empty {
-        background: white;
-
-        border: 1px solid #E4E7EC;
-
-        border-radius: 14px;
-
-        padding: 2.5rem;
-
-        text-align: center;
-
-        margin-top: 1rem;
-    }
-
-    .empty-icon {
-        font-size: 2rem;
-    }
-
-    .empty-title {
-        color: #12304A;
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-top: .5rem;
-    }
-
-    .empty-text {
+    .import-description {
         color: #667085;
-        margin-top: .4rem;
+        font-size: 14px;
+        margin-top: 5px;
     }
 
 
-    /* ---------- SYSTEM ---------- */
+    /* ========================================================
+       EMPTY STATE
+       ======================================================== */
 
-    .system {
-        background: #12304A;
-        color: white;
-
+    .empty-box {
+        background: #FFFFFF;
+        border: 1px solid #E4E7EC;
         border-radius: 14px;
-
-        padding: 1.2rem 1.4rem;
-
-        margin-top: 2rem;
+        padding: 40px;
+        text-align: center;
+        margin-top: 20px;
     }
 
-    .system-title {
-        color: #D8B65A;
+    .empty-title-text {
+        color: #123B5D;
+        font-size: 19px;
+        font-weight: 700;
+    }
+
+    .empty-description {
+        color: #667085;
+        margin-top: 6px;
+    }
+
+
+    /* ========================================================
+       SYSTEM INFORMATION
+       ======================================================== */
+
+    .system-box {
+        background: #123B5D;
+        border-radius: 14px;
+        padding: 22px;
+        margin-top: 35px;
+    }
+
+    .system-title-text {
+        color: #D9B866;
+        font-size: 17px;
         font-weight: 750;
-        margin-bottom: .7rem;
+        margin-bottom: 12px;
     }
 
     .system-row {
         display: flex;
         justify-content: space-between;
-
-        padding: .45rem 0;
-
-        border-bottom: 1px solid rgba(255,255,255,.12);
-
-        font-size: .88rem;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
     }
 
     .system-row:last-child {
@@ -351,8 +285,19 @@ st.markdown(
     }
 
     .system-value {
-        color: white;
+        color: #FFFFFF;
         font-weight: 600;
+    }
+
+
+    /* ========================================================
+       BUTTONS
+       ======================================================== */
+
+    .stButton > button {
+        border-radius: 9px;
+        min-height: 45px;
+        font-weight: 650;
     }
 
     </style>
@@ -378,16 +323,17 @@ def get_connection():
 
 
 def create_database():
+
     connection = get_connection()
 
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            author TEXT,
-            publisher TEXT,
-            language TEXT
+            title TEXT NOT NULL,
+            author TEXT DEFAULT '',
+            publisher TEXT DEFAULT '',
+            language TEXT DEFAULT ''
         )
         """
     )
@@ -400,7 +346,7 @@ create_database()
 
 
 # ============================================================
-# LOAD DATABASE
+# LOAD BOOKS
 # ============================================================
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -423,7 +369,7 @@ def load_books():
 
     connection.close()
 
-    return tuple(
+    return [
         (
             row["id"],
             row["title"] or "",
@@ -432,7 +378,7 @@ def load_books():
             row["language"] or "",
         )
         for row in rows
-    )
+    ]
 
 
 # ============================================================
@@ -474,9 +420,9 @@ def normalize_text(text):
     text = unicodedata.normalize("NFKD", text)
 
     text = "".join(
-        character
-        for character in text
-        if not unicodedata.combining(character)
+        char
+        for char in text
+        if not unicodedata.combining(char)
     )
 
     text = ARABIC_DIACRITICS.sub("", text)
@@ -519,7 +465,10 @@ def phrase_contains(query, field):
     query = normalize_text(query)
     field = normalize_text(field)
 
-    return bool(query and field and query in field)
+    if not query or not field:
+        return False
+
+    return query in field
 
 
 def exact_token_match(query, field):
@@ -562,15 +511,18 @@ def field_match(query, title, author, publisher):
 
     q = normalize_text(query)
 
+    if not q:
+        return None, 0
+
     # Exact title
-    if q == normalize_text(title) and q:
+    if q == normalize_text(title):
         return "Exact Title Match", 100
 
     # Title phrase
     if phrase_contains(q, title):
         return "Title Match", 98
 
-    # Title words
+    # Title keywords
     if exact_token_match(q, title):
         return "Title Keyword Match", 96
 
@@ -590,7 +542,7 @@ def field_match(query, title, author, publisher):
     score = fuzzy_score(q, author)
 
     if score >= MIN_AUTHOR_SCORE:
-        return "Author Match", score * .96
+        return "Author Match", score * 0.96
 
     # Publisher
     if phrase_contains(q, publisher):
@@ -602,7 +554,7 @@ def field_match(query, title, author, publisher):
     score = fuzzy_score(q, publisher)
 
     if score >= MIN_PUBLISHER_SCORE:
-        return "Publisher Match", score * .94
+        return "Publisher Match", score * 0.94
 
     return None, 0
 
@@ -660,22 +612,22 @@ def search_books(query, rows):
 
 
 # ============================================================
-# EXCEL IMPORT
+# EXCEL HELPERS
 # ============================================================
 
-def find_column(columns, possible_names):
+def find_column(columns, names):
 
-    normalized = {
+    normalized_columns = {
         normalize_text(column): column
         for column in columns
     }
 
-    for name in possible_names:
+    for name in names:
 
-        name_normalized = normalize_text(name)
+        normalized_name = normalize_text(name)
 
-        if name_normalized in normalized:
-            return normalized[name_normalized]
+        if normalized_name in normalized_columns:
+            return normalized_columns[normalized_name]
 
     return None
 
@@ -684,29 +636,19 @@ def process_excel(uploaded_file):
 
     try:
 
-        dataframe = pd.read_excel(
-            uploaded_file
-        )
+        dataframe = pd.read_excel(uploaded_file)
 
     except Exception as exc:
 
         return None, f"Unable to read Excel file: {exc}"
 
-
     if dataframe.empty:
         return None, "The Excel file is empty."
 
-
-    # Remove completely empty columns
     dataframe = dataframe.dropna(
         axis=1,
         how="all",
     )
-
-
-    # --------------------------------------------------------
-    # Detect columns
-    # --------------------------------------------------------
 
     title_column = find_column(
         dataframe.columns,
@@ -753,19 +695,13 @@ def process_excel(uploaded_file):
         ],
     )
 
-
     if title_column is None:
 
         return (
             None,
             "Could not find a Title column. "
-            "Please name the column 'Title' or 'Book Title'.",
+            "Please name it 'Title' or 'Book Title'.",
         )
-
-
-    # --------------------------------------------------------
-    # Build clean dataframe
-    # --------------------------------------------------------
 
     clean = pd.DataFrame()
 
@@ -786,7 +722,6 @@ def process_excel(uploaded_file):
     else:
         clean["author"] = ""
 
-
     if publisher_column:
         clean["publisher"] = (
             dataframe[publisher_column]
@@ -796,7 +731,6 @@ def process_excel(uploaded_file):
         )
     else:
         clean["publisher"] = ""
-
 
     if language_column:
         clean["language"] = (
@@ -808,15 +742,11 @@ def process_excel(uploaded_file):
     else:
         clean["language"] = ""
 
-
-    # Remove empty titles
     clean = clean[
         clean["title"].str.strip() != ""
     ]
 
-
-    # Remove duplicate books
-    clean["_duplicate_key"] = (
+    clean["_key"] = (
         clean["title"].map(normalize_text)
         + "|"
         + clean["author"].map(normalize_text)
@@ -825,22 +755,24 @@ def process_excel(uploaded_file):
     )
 
     clean = clean.drop_duplicates(
-        subset=["_duplicate_key"]
+        subset=["_key"]
     )
 
     clean = clean.drop(
-        columns=["_duplicate_key"]
+        columns=["_key"]
     )
 
     clean = clean.reset_index(drop=True)
 
-
     if clean.empty:
         return None, "No valid book records were found."
 
-
     return clean, None
 
+
+# ============================================================
+# DATABASE REPLACEMENT
+# ============================================================
 
 def replace_database(dataframe):
 
@@ -854,17 +786,18 @@ def replace_database(dataframe):
 
         records = [
             (
-                row["title"],
-                row["author"],
-                row["publisher"],
-                row["language"],
+                str(row["title"]),
+                str(row["author"]),
+                str(row["publisher"]),
+                str(row["language"]),
             )
             for _, row in dataframe.iterrows()
         ]
 
         connection.executemany(
             """
-            INSERT INTO books (
+            INSERT INTO books
+            (
                 title,
                 author,
                 publisher,
@@ -895,18 +828,16 @@ def replace_database(dataframe):
 
 st.markdown(
     f"""
-    <div class="hero">
-
-        <div class="hero-title">
-            {html.escape(APP_TITLE)}
+    <div class="hero-box">
+        <div class="hero-title-text">
+            {APP_TITLE}
         </div>
 
-        <div class="hero-subtitle">
-            {html.escape(APP_SUBTITLE)}
+        <div class="hero-subtitle-text">
+            {APP_SUBTITLE}
         </div>
 
-        <div class="hero-line"></div>
-
+        <div class="gold-line"></div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -914,7 +845,7 @@ st.markdown(
 
 
 # ============================================================
-# DATABASE DATA
+# LOAD DATA
 # ============================================================
 
 rows = load_books()
@@ -944,7 +875,7 @@ languages = {
 # NAVIGATION
 # ============================================================
 
-search_tab, import_tab = st.tabs(
+search_tab, management_tab = st.tabs(
     [
         "🔎 Catalogue Search",
         "📥 Catalogue Management",
@@ -953,31 +884,33 @@ search_tab, import_tab = st.tabs(
 
 
 # ============================================================
-# SEARCH TAB
+# SEARCH
 # ============================================================
 
 with search_tab:
 
     st.markdown(
-        """
-        <div class="search-title">
-            Search the Library Catalogue
-        </div>
+        '<div class="section-title-text">'
+        'Search the Library Catalogue'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-        <div class="search-help">
-            Search by title, author, publisher or keyword.
-            Arabic and English text are supported.
-        </div>
-        """,
+    st.markdown(
+        '<div class="section-description-text">'
+        'Search by title, author, publisher or keyword. '
+        'Arabic and English text are supported.'
+        '</div>',
         unsafe_allow_html=True,
     )
 
     query = st.text_input(
-        "Search",
-        placeholder="e.g. Riyad al-Salihin, Ibn Kathir, Dar al-Fikr...",
+        "Catalogue Search",
+        placeholder=(
+            "Enter book title, author, publisher or keyword..."
+        ),
         label_visibility="collapsed",
     )
-
 
     if query.strip():
 
@@ -989,60 +922,42 @@ with search_tab:
         if results:
 
             st.markdown(
-                f"""
-                <div class="section-title">
-                    {len(results)} Matching Record(s)
-                </div>
-                """,
+                f'<div class="section-title-text">'
+                f'{len(results)} Matching Record(s)'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
             for book in results:
 
-                reason = book["reason"]
-
-                if reason == "Exact Title Match":
-                    match_class = "match-exact"
-
-                elif "Title" in reason:
-                    match_class = "match-title"
-
-                elif "Author" in reason:
-                    match_class = "match-author"
-
-                elif "Publisher" in reason:
-                    match_class = "match-publisher"
-
-                else:
-                    match_class = ""
-
                 st.markdown(
                     f"""
-                    <div class="book-card">
+                    <div class="book-box">
 
-                        <div class="book-title">
-                            {html.escape(book["title"])}
+                        <div class="book-title-text">
+                            {book["title"]}
                         </div>
 
-                        <span class="badge">
-                            Author:
-                            {html.escape(book["author"] or "—")}
-                        </span>
+                        <div class="book-info">
+                            <b>Author:</b>
+                            {book["author"] or "—"}
+                        </div>
 
-                        <span class="badge">
-                            Publisher:
-                            {html.escape(book["publisher"] or "—")}
-                        </span>
+                        <div class="book-info">
+                            <b>Publisher:</b>
+                            {book["publisher"] or "—"}
+                        </div>
 
-                        <span class="badge">
-                            Language:
-                            {html.escape(book["language"] or "—")}
-                        </span>
+                        <div class="book-info">
+                            <b>Language:</b>
+                            {book["language"] or "—"}
+                        </div>
 
-                        <span class="match {match_class}">
-                            {html.escape(reason)}
-                            · {book["score"]}%
-                        </span>
+                        <div class="book-info">
+                            <b>Match:</b>
+                            {book["reason"]}
+                            ({book["score"]}%)
+                        </div>
 
                     </div>
                     """,
@@ -1053,17 +968,17 @@ with search_tab:
 
             st.markdown(
                 """
-                <div class="empty">
+                <div class="empty-box">
 
-                    <div class="empty-icon">
+                    <div style="font-size:34px;">
                         🔍
                     </div>
 
-                    <div class="empty-title">
+                    <div class="empty-title-text">
                         No matching books found
                     </div>
 
-                    <div class="empty-text">
+                    <div class="empty-description">
                         Try another title, author,
                         publisher or keyword.
                     </div>
@@ -1073,21 +988,18 @@ with search_tab:
                 unsafe_allow_html=True,
             )
 
-
     else:
 
         st.markdown(
-            """
-            <div class="section-title">
-                Catalogue Overview
-            </div>
-            """,
+            '<div class="section-title-text">'
+            'Catalogue Overview'
+            '</div>',
             unsafe_allow_html=True,
         )
 
         c1, c2, c3, c4 = st.columns(4)
 
-        metrics = [
+        metric_data = [
             (total_books, "Books"),
             (len(authors), "Authors"),
             (len(publishers), "Publishers"),
@@ -1096,20 +1008,20 @@ with search_tab:
 
         for column, (number, label) in zip(
             [c1, c2, c3, c4],
-            metrics,
+            metric_data,
         ):
 
             with column:
 
                 st.markdown(
                     f"""
-                    <div class="metric-card">
+                    <div class="metric-box">
 
-                        <div class="metric-number">
+                        <div class="metric-number-text">
                             {number:,}
                         </div>
 
-                        <div class="metric-label">
+                        <div class="metric-label-text">
                             {label}
                         </div>
 
@@ -1120,53 +1032,48 @@ with search_tab:
 
 
 # ============================================================
-# IMPORT TAB
+# MANAGEMENT
 # ============================================================
 
-with import_tab:
+with management_tab:
 
     st.markdown(
-        """
-        <div class="section-title">
-            Catalogue Management
-        </div>
-
-        <div class="section-description">
-            Upload your Excel catalogue to create or replace
-            the library database.
-        </div>
-        """,
+        '<div class="section-title-text">'
+        'Catalogue Management'
+        '</div>',
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        '<div class="section-description-text">'
+        'Upload your Excel catalogue and replace the '
+        'current catalogue database.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         """
         <div class="import-box">
 
-            <div class="import-title">
-                📊 Import Excel Catalogue
+            <div class="import-title-text">
+                📊 Excel Catalogue Import
             </div>
 
-            <p style="color:#667085;">
+            <div class="import-description">
                 Recommended columns:
-                <b>Title</b>, <b>Author</b>,
-                <b>Publisher</b>, and optionally
-                <b>Language</b>.
-            </p>
+                Title, Author, Publisher and Language.
+            </div>
 
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-
     uploaded_file = st.file_uploader(
-        "Upload Excel catalogue",
+        "Upload Excel file",
         type=["xlsx", "xls"],
-        help="Upload your library catalogue in Excel format.",
     )
-
 
     if uploaded_file:
 
@@ -1181,31 +1088,26 @@ with import_tab:
         else:
 
             st.success(
-                f"Excel file successfully read. "
                 f"{len(dataframe):,} book records detected."
             )
 
-
-            st.markdown(
-                "### Preview"
-            )
+            st.markdown("### Preview")
 
             st.dataframe(
-                dataframe.head(10),
+                dataframe.head(20),
                 use_container_width=True,
                 hide_index=True,
             )
 
+            c1, c2, c3 = st.columns(3)
 
-            p1, p2, p3 = st.columns(3)
-
-            with p1:
+            with c1:
                 st.metric(
-                    "Books Detected",
+                    "Books",
                     f"{len(dataframe):,}",
                 )
 
-            with p2:
+            with c2:
                 st.metric(
                     "Authors",
                     dataframe["author"]
@@ -1214,7 +1116,7 @@ with import_tab:
                     .nunique(),
                 )
 
-            with p3:
+            with c3:
                 st.metric(
                     "Publishers",
                     dataframe["publisher"]
@@ -1223,15 +1125,13 @@ with import_tab:
                     .nunique(),
                 )
 
-
             st.warning(
-                "Importing this catalogue will replace "
-                "the current contents of library.db."
+                "This will replace the current contents "
+                "of library.db."
             )
 
-
             if st.button(
-                "💾 Replace Database with This Catalogue",
+                "💾 Import Catalogue",
                 type="primary",
                 use_container_width=True,
             ):
@@ -1244,7 +1144,7 @@ with import_tab:
 
                     st.success(
                         f"Successfully imported "
-                        f"{len(dataframe):,} books into library.db."
+                        f"{len(dataframe):,} books."
                     )
 
                     st.rerun()
@@ -1261,54 +1161,26 @@ with import_tab:
 # ============================================================
 
 st.markdown(
-    f"""
-    <div class="system">
-
-        <div class="system-title">
-            System Information
-        </div>
-
-        <div class="system-row">
-            <span class="system-key">
-                Database
-            </span>
-
-            <span class="system-value">
-                {html.escape(DATABASE_FILE.name)}
-            </span>
-        </div>
-
-        <div class="system-row">
-            <span class="system-key">
-                Books Indexed
-            </span>
-
-            <span class="system-value">
-                {total_books:,}
-            </span>
-        </div>
-
-        <div class="system-row">
-            <span class="system-key">
-                Search Engine
-            </span>
-
-            <span class="system-value">
-                Exact + Token + Fuzzy
-            </span>
-        </div>
-
-        <div class="system-row">
-            <span class="system-key">
-                Catalogue Source
-            </span>
-
-            <span class="system-value">
-                Excel
-            </span>
-        </div>
-
-    </div>
-    """,
+    '<div class="system-box">'
+    '<div class="system-title-text">'
+    'System Information'
+    '</div>'
+    f'<div class="system-row">'
+    f'<span class="system-key">Database</span>'
+    f'<span class="system-value">{DATABASE_FILE.name}</span>'
+    f'</div>'
+    f'<div class="system-row">'
+    f'<span class="system-key">Books Indexed</span>'
+    f'<span class="system-value">{total_books:,}</span>'
+    f'</div>'
+    f'<div class="system-row">'
+    f'<span class="system-key">Search Engine</span>'
+    f'<span class="system-value">Exact + Token + Fuzzy</span>'
+    f'</div>'
+    f'<div class="system-row">'
+    f'<span class="system-key">Catalogue Source</span>'
+    f'<span class="system-value">Excel</span>'
+    f'</div>'
+    '</div>',
     unsafe_allow_html=True,
 )
