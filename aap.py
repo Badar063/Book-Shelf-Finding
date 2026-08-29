@@ -723,12 +723,13 @@ with search_tab:
             )
 
             for book in results:
-                title = display_text(book["title"], "Untitled")
-                author = display_text(book["author"])
-                publisher = display_text(book["publisher"])
-                language = display_text(book["language"])
-                shelf_no = display_text(book["shelf_no"], "Not specified")
-                reason = display_text(book["reason"], "Match")
+                # Unescape text entities so symbols like quotes render properly without html.escape() overhead
+                title = html.unescape(display_text(book["title"], "Untitled"))
+                author = html.unescape(display_text(book["author"]))
+                publisher = html.unescape(display_text(book["publisher"]))
+                language = html.unescape(display_text(book["language"]))
+                shelf_no = html.unescape(display_text(book["shelf_no"], "Not specified"))
+                reason = html.unescape(display_text(book["reason"], "Match"))
                 score = book["score"]
 
                 # Fetch image dynamically from WordPress API
@@ -739,19 +740,19 @@ with search_tab:
                 <div class="book-card">
                     {img_html}
                     <div class="book-card-body">
-                        <div class="book-title">{html.escape(title)}</div>
+                        <div class="book-title">{title}</div>
                         <div class="card-grid">
                             <div class="card-col">
-                                <div class="book-info"><span class="book-label">Author:</span> {html.escape(author)}</div>
-                                <div class="book-info"><span class="book-label">Publisher:</span> {html.escape(publisher)}</div>
+                                <div class="book-info"><span class="book-label">Author:</span> {author}</div>
+                                <div class="book-info"><span class="book-label">Publisher:</span> {publisher}</div>
                             </div>
                             <div class="card-col">
-                                <div class="book-info"><span class="book-label">Language:</span> {html.escape(language)}</div>
-                                <div class="shelf-box">📍 Shelf: {html.escape(shelf_no)}</div>
+                                <div class="book-info"><span class="book-label">Language:</span> {language}</div>
+                                <div class="shelf-box">📍 Shelf: {shelf_no}</div>
                             </div>
                         </div>
                         <div class="match-box">
-                            {html.escape(reason)} · {score}%
+                            {reason} · {score}%
                         </div>
                     </div>
                 </div>
