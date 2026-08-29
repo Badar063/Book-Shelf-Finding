@@ -799,3 +799,30 @@ with management_tab:
             st.rerun()
         except Exception as exc:
             st.error(f"Deletion failed: {exc}")
+import requests
+
+def get_wordpress_image(book_title):
+    """Fetches the featured image URL for a book from the WordPress REST API."""
+    try:
+
+        wp_url = st.secrets["WP_URL"]  # e.g. "https://yourwebsite.com"
+        api_key = st.secrets.get("WP_API_KEY", "")
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.get(
+            f"{wp_url}/wp-json/wp/v2/posts",
+            params={"search": book_title, "_embed": 1, "per_page": 1},
+            headers=headers,
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and "_embedded" in data[0] and "wp:featuredmedia" in data[0]["_embedded"]:
+                return data[0]["_embedded"]["wp:featuredmedia"][0]["source_url"]
+    except Exception:
+        pass
+    return None
