@@ -25,6 +25,8 @@ MIN_TITLE_SCORE = 82
 MIN_AUTHOR_SCORE = 88
 MIN_PUBLISHER_SCORE = 90
 
+DEFAULT_BOOK_COVER = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
+
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -258,30 +260,53 @@ st.markdown(
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_wordpress_image(book_title):
-    """Fetches the featured image URL for a book title from WordPress REST API using Streamlit secrets."""
+    """Fetches image URL for a book title using secrets config with fallback checks."""
+    if "WP_URL" not in st.secrets:
+        return DEFAULT_BOOK_COVER
+
     try:
-        wp_url = st.secrets["WP_URL"]
-        api_key = st.secrets.get("WP_API_KEY", "")
+        wp_url = st.secrets["WP_URL"].strip().rstrip("/")
+        api_key = st.secrets.get("WP_API_KEY", "").strip()
 
         headers = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
+        # 1. First attempt: Search WordPress Media Library directly
         response = requests.get(
-            f"{wp_url.rstrip('/')}/wp-json/wp/v2/posts",
-            params={"search": book_title, "_embed": 1, "per_page": 1},
+            f"{wp_url}/wp-json/wp/v2/media",
+            params={"search": book_title, "per_page": 1},
             headers=headers,
-            timeout=4
+            timeout=4,
         )
 
         if response.status_code == 200:
             data = response.json()
-            if data and "_embedded" in data[0] and "wp:featuredmedia" in data[0]["_embedded"]:
+            if data and len(data) > 0 and "source_url" in data[0]:
+                return data[0]["source_url"]
+
+        # 2. Second attempt: Search Posts with embedded featured media
+        response = requests.get(
+            f"{wp_url}/wp-json/wp/v2/posts",
+            params={"search": book_title, "_embed": 1, "per_page": 1},
+            headers=headers,
+            timeout=4,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if (
+                data
+                and "_embedded" in data[0]
+                and "wp:featuredmedia" in data[0]["_embedded"]
+            ):
                 media = data[0]["_embedded"]["wp:featuredmedia"][0]
                 return media.get("source_url")
+
     except Exception:
         pass
-    return None
+
+    return DEFAULT_BOOK_COVER
 
 
 # ============================================================
@@ -301,8 +326,11 @@ def clean_catalogue_text(value):
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
 
-    # Formats shelf strings like 'p4 70' or 'P4 70' to 'P4-70'
-    text = re.sub(r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b", lambda m: f"{m.group(1).upper()}-{m.group(2)}", text)
+    text = re.sub(
+        r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b",
+        lambda m: f"{m.group(1).upper()}-{m.group(2)}",
+        text,
+    )
 
     return text
 
@@ -512,7 +540,6 @@ def field_match(query, title, author, publisher):
     q_tokens = tokenize(q)
     title_norm = normalize_text(title)
 
-    # Title Search Rules
     if q == title_norm:
         return "Exact Title Match", 100
     if len(q_tokens) == 1 and q in tokenize(title):
@@ -527,7 +554,6 @@ def field_match(query, title, author, publisher):
     if t_score >= t_thresh:
         return "Strong Title Match", t_score
 
-    # Author Search Rules
     a_tokens = tokenize(author)
     if (len(q_tokens) == 1 and q in a_tokens) or (
         len(q_tokens) > 1 and exact_token_match(q, author)
@@ -538,7 +564,6 @@ def field_match(query, title, author, publisher):
     if len(q) >= 4 and a_score >= MIN_AUTHOR_SCORE:
         return "Author Match", a_score
 
-    # Publisher Search Rules
     p_tokens = tokenize(publisher)
     if (len(q_tokens) == 1 and q in p_tokens) or (
         len(q_tokens) > 1 and exact_token_match(q, publisher)
@@ -731,11 +756,9 @@ with search_tab:
                 reason = html.unescape(display_text(book["reason"], "Match"))
                 score = book["score"]
 
-                # Fetch image dynamically from WordPress API
                 img_url = get_wordpress_image(title)
-                img_html = f'<img src="{img_url}" class="book-cover-img" alt="Book Cover">' if img_url else ""
+                img_html = f'<img src="{img_url}" class="book-cover-img" alt="Book Cover">'
 
-                # Inline single-line string avoids Streamlit indent-parsing bugs that print raw code
                 card_html = (
                     f'<div class="book-card">{img_html}'
                     f'<div class="book-card-body">'
@@ -760,7 +783,6 @@ with search_tab:
             st.info("No matching books found. Try full titles, author names, or alternative keywords.")
 
     else:
-        # OVERVIEW STATS
         st.markdown(
             """
             <div class="section-heading">Catalogue Overview</div>
@@ -801,7 +823,6 @@ with management_tab:
         unsafe_allow_html=True,
     )
 
-    # IMPORT EXCEL
     st.markdown(
         """
         <div class="management-card">
@@ -834,7 +855,6 @@ with management_tab:
 
     st.divider()
 
-    # DELETE DATABASE
     st.markdown(
         """
         <div class="management-card">
