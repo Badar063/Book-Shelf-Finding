@@ -5,7 +5,6 @@ import unicodedata
 from pathlib import Path
 
 import pandas as pd
-import requests
 import streamlit as st
 from rapidfuzz import fuzz
 
@@ -24,8 +23,6 @@ MAX_RESULTS = 50
 MIN_TITLE_SCORE = 82
 MIN_AUTHOR_SCORE = 88
 MIN_PUBLISHER_SCORE = 90
-
-DEFAULT_BOOK_COVER = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=200&auto=format&fit=crop&q=80"
 
 
 # ============================================================
@@ -156,22 +153,6 @@ st.markdown(
         margin-top: 12px;
         margin-bottom: 12px;
         box-shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
-        display: flex !important;
-        gap: 18px !important;
-        align-items: flex-start !important;
-    }
-
-    .book-cover-img {
-        width: 110px;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 8px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.12);
-        flex-shrink: 0;
-    }
-
-    .book-card-body {
-        flex-grow: 1;
     }
 
     .book-title {
@@ -255,61 +236,6 @@ st.markdown(
 
 
 # ============================================================
-# WORDPRESS API INTEGRATION
-# ============================================================
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_wordpress_image(book_title):
-    """Fetches image URL for a book title using secrets config with fallback checks."""
-    if "WP_URL" not in st.secrets:
-        return DEFAULT_BOOK_COVER
-
-    try:
-        wp_url = st.secrets["WP_URL"].strip().rstrip("/")
-        api_key = st.secrets.get("WP_API_KEY", "").strip()
-
-        headers = {}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        # 1. First attempt: Search WordPress Media Library directly
-        response = requests.get(
-            f"{wp_url}/wp-json/wp/v2/media",
-            params={"search": book_title, "per_page": 1},
-            headers=headers,
-            timeout=4,
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            if data and len(data) > 0 and "source_url" in data[0]:
-                return data[0]["source_url"]
-
-        # 2. Second attempt: Search Posts with embedded featured media
-        response = requests.get(
-            f"{wp_url}/wp-json/wp/v2/posts",
-            params={"search": book_title, "_embed": 1, "per_page": 1},
-            headers=headers,
-            timeout=4,
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            if (
-                data
-                and "_embedded" in data[0]
-                and "wp:featuredmedia" in data[0]["_embedded"]
-            ):
-                media = data[0]["_embedded"]["wp:featuredmedia"][0]
-                return media.get("source_url")
-
-    except Exception:
-        pass
-
-    return DEFAULT_BOOK_COVER
-
-
-# ============================================================
 # CLEAN TEXT UTILITIES
 # ============================================================
 
@@ -326,11 +252,8 @@ def clean_catalogue_text(value):
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
 
-    text = re.sub(
-        r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b",
-        lambda m: f"{m.group(1).upper()}-{m.group(2)}",
-        text,
-    )
+    # Format patterns like 'p4 70' or 'P4 70' into 'P4-70'
+    text = re.sub(r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b", lambda m: f"{m.group(1).upper()}-{m.group(2)}", text)
 
     return text
 
@@ -540,6 +463,7 @@ def field_match(query, title, author, publisher):
     q_tokens = tokenize(q)
     title_norm = normalize_text(title)
 
+    # Title Search Rules
     if q == title_norm:
         return "Exact Title Match", 100
     if len(q_tokens) == 1 and q in tokenize(title):
@@ -554,6 +478,7 @@ def field_match(query, title, author, publisher):
     if t_score >= t_thresh:
         return "Strong Title Match", t_score
 
+    # Author Search Rules
     a_tokens = tokenize(author)
     if (len(q_tokens) == 1 and q in a_tokens) or (
         len(q_tokens) > 1 and exact_token_match(q, author)
@@ -564,6 +489,7 @@ def field_match(query, title, author, publisher):
     if len(q) >= 4 and a_score >= MIN_AUTHOR_SCORE:
         return "Author Match", a_score
 
+    # Publisher Search Rules
     p_tokens = tokenize(publisher)
     if (len(q_tokens) == 1 and q in p_tokens) or (
         len(q_tokens) > 1 and exact_token_match(q, publisher)
@@ -748,41 +674,39 @@ with search_tab:
             )
 
             for book in results:
-                title = html.unescape(display_text(book["title"], "Untitled"))
-                author = html.unescape(display_text(book["author"]))
-                publisher = html.unescape(display_text(book["publisher"]))
-                language = html.unescape(display_text(book["language"]))
-                shelf_no = html.unescape(display_text(book["shelf_no"], "Not specified"))
-                reason = html.unescape(display_text(book["reason"], "Match"))
+                title = display_text(book["title"], "Untitled")
+                author = display_text(book["author"])
+                publisher = display_text(book["publisher"])
+                language = display_text(book["language"])
+                shelf_no = display_text(book["shelf_no"], "Not specified")
+                reason = display_text(book["reason"], "Match")
                 score = book["score"]
 
-                img_url = get_wordpress_image(title)
-                img_html = f'<img src="{img_url}" class="book-cover-img" alt="Book Cover">'
-
-                card_html = (
-                    f'<div class="book-card">{img_html}'
-                    f'<div class="book-card-body">'
-                    f'<div class="book-title">{title}</div>'
-                    f'<div class="card-grid">'
-                    f'<div class="card-col">'
-                    f'<div class="book-info"><span class="book-label">Author:</span> {author}</div>'
-                    f'<div class="book-info"><span class="book-label">Publisher:</span> {publisher}</div>'
-                    f'</div>'
-                    f'<div class="card-col">'
-                    f'<div class="book-info"><span class="book-label">Language:</span> {language}</div>'
-                    f'<div class="shelf-box">📍 Shelf: {shelf_no}</div>'
-                    f'</div>'
-                    f'</div>'
-                    f'<div class="match-box">{reason} · {score}%</div>'
-                    f'</div>'
-                    f'</div>'
-                )
-
+                # Fully encapsulated HTML string ensures rendered tags are unbroken
+                card_html = f"""
+                <div class="book-card">
+                    <div class="book-title">{html.escape(title)}</div>
+                    <div class="card-grid">
+                        <div class="card-col">
+                            <div class="book-info"><span class="book-label">Author:</span> {html.escape(author)}</div>
+                            <div class="book-info"><span class="book-label">Publisher:</span> {html.escape(publisher)}</div>
+                        </div>
+                        <div class="card-col">
+                            <div class="book-info"><span class="book-label">Language:</span> {html.escape(language)}</div>
+                            <div class="shelf-box">📍 Shelf: {html.escape(shelf_no)}</div>
+                        </div>
+                    </div>
+                    <div class="match-box">
+                        {html.escape(reason)} · {score}%
+                    </div>
+                </div>
+                """
                 st.markdown(card_html, unsafe_allow_html=True)
         else:
             st.info("No matching books found. Try full titles, author names, or alternative keywords.")
 
     else:
+        # OVERVIEW STATS
         st.markdown(
             """
             <div class="section-heading">Catalogue Overview</div>
@@ -823,6 +747,7 @@ with management_tab:
         unsafe_allow_html=True,
     )
 
+    # IMPORT EXCEL
     st.markdown(
         """
         <div class="management-card">
@@ -855,6 +780,7 @@ with management_tab:
 
     st.divider()
 
+    # DELETE DATABASE
     st.markdown(
         """
         <div class="management-card">
