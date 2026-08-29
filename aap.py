@@ -5,6 +5,7 @@ import unicodedata
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 from rapidfuzz import fuzz
 
@@ -153,6 +154,22 @@ st.markdown(
         margin-top: 12px;
         margin-bottom: 12px;
         box-shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
+        display: flex;
+        gap: 18px;
+        align-items: flex-start;
+    }
+
+    .book-cover-img {
+        width: 110px;
+        height: 150px;
+        object-fit: cover;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+        flex-shrink: 0;
+    }
+
+    .book-card-body {
+        flex-grow: 1;
     }
 
     .book-title {
@@ -236,6 +253,38 @@ st.markdown(
 
 
 # ============================================================
+# WORDPRESS API INTEGRATION
+# ============================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_wordpress_image(book_title):
+    """Fetches the featured image URL for a book title from WordPress REST API using Streamlit secrets."""
+    try:
+        wp_url = st.secrets["WP_URL"]
+        api_key = st.secrets.get("WP_API_KEY", "")
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.get(
+            f"{wp_url.rstrip('/')}/wp-json/wp/v2/posts",
+            params={"search": book_title, "_embed": 1, "per_page": 1},
+            headers=headers,
+            timeout=4
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            if data and "_embedded" in data[0] and "wp:featuredmedia" in data[0]["_embedded"]:
+                media = data[0]["_embedded"]["wp:featuredmedia"][0]
+                return media.get("source_url")
+    except Exception:
+        pass
+    return None
+
+
+# ============================================================
 # CLEAN TEXT UTILITIES
 # ============================================================
 
@@ -252,7 +301,7 @@ def clean_catalogue_text(value):
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
 
-    # Format patterns like 'p4 70' or 'P4 70' into 'P4-70'
+    # Formats shelf strings like 'p4 70' or 'P4 70' to 'P4-70'
     text = re.sub(r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b", lambda m: f"{m.group(1).upper()}-{m.group(2)}", text)
 
     return text
@@ -682,22 +731,28 @@ with search_tab:
                 reason = display_text(book["reason"], "Match")
                 score = book["score"]
 
-                # Fully encapsulated HTML string ensures rendered tags are unbroken
+                # Fetch image dynamically from WordPress API
+                img_url = get_wordpress_image(title)
+                img_html = f'<img src="{img_url}" class="book-cover-img" alt="Book Cover">' if img_url else ""
+
                 card_html = f"""
                 <div class="book-card">
-                    <div class="book-title">{html.escape(title)}</div>
-                    <div class="card-grid">
-                        <div class="card-col">
-                            <div class="book-info"><span class="book-label">Author:</span> {html.escape(author)}</div>
-                            <div class="book-info"><span class="book-label">Publisher:</span> {html.escape(publisher)}</div>
+                    {img_html}
+                    <div class="book-card-body">
+                        <div class="book-title">{html.escape(title)}</div>
+                        <div class="card-grid">
+                            <div class="card-col">
+                                <div class="book-info"><span class="book-label">Author:</span> {html.escape(author)}</div>
+                                <div class="book-info"><span class="book-label">Publisher:</span> {html.escape(publisher)}</div>
+                            </div>
+                            <div class="card-col">
+                                <div class="book-info"><span class="book-label">Language:</span> {html.escape(language)}</div>
+                                <div class="shelf-box">📍 Shelf: {html.escape(shelf_no)}</div>
+                            </div>
                         </div>
-                        <div class="card-col">
-                            <div class="book-info"><span class="book-label">Language:</span> {html.escape(language)}</div>
-                            <div class="shelf-box">📍 Shelf: {html.escape(shelf_no)}</div>
+                        <div class="match-box">
+                            {html.escape(reason)} · {score}%
                         </div>
-                    </div>
-                    <div class="match-box">
-                        {html.escape(reason)} · {score}%
                     </div>
                 </div>
                 """
@@ -799,30 +854,3 @@ with management_tab:
             st.rerun()
         except Exception as exc:
             st.error(f"Deletion failed: {exc}")
-import requests
-
-def get_wordpress_image(book_title):
-    """Fetches the featured image URL for a book from the WordPress REST API."""
-    try:
-
-        wp_url = st.secrets["WP_URL"]  # e.g. "https://yourwebsite.com"
-        api_key = st.secrets.get("WP_API_KEY", "")
-
-        headers = {}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        response = requests.get(
-            f"{wp_url}/wp-json/wp/v2/posts",
-            params={"search": book_title, "_embed": 1, "per_page": 1},
-            headers=headers,
-            timeout=5
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data and "_embedded" in data[0] and "wp:featuredmedia" in data[0]["_embedded"]:
-                return data[0]["_embedded"]["wp:featuredmedia"][0]["source_url"]
-    except Exception:
-        pass
-    return None
