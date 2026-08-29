@@ -250,8 +250,12 @@ def clean_catalogue_text(value):
     text = html.unescape(text)
     text = HTML_TAG_PATTERN.sub(" ", text)
     text = html.unescape(text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # Format patterns like 'p4 70' or 'P4 70' into 'P4-70'
+    text = re.sub(r"(?i)\b([a-z]\d+)[\s\-_]+(\d+)\b", lambda m: f"{m.group(1).upper()}-{m.group(2)}", text)
+
+    return text
 
 
 def display_text(value, fallback="—"):
