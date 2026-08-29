@@ -154,9 +154,9 @@ st.markdown(
         margin-top: 12px;
         margin-bottom: 12px;
         box-shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
-        display: flex;
-        gap: 18px;
-        align-items: flex-start;
+        display: flex !important;
+        gap: 18px !important;
+        align-items: flex-start !important;
     }
 
     .book-cover-img {
@@ -723,7 +723,6 @@ with search_tab:
             )
 
             for book in results:
-                # Unescape text entities so symbols like quotes render properly without html.escape() overhead
                 title = html.unescape(display_text(book["title"], "Untitled"))
                 author = html.unescape(display_text(book["author"]))
                 publisher = html.unescape(display_text(book["publisher"]))
@@ -736,27 +735,26 @@ with search_tab:
                 img_url = get_wordpress_image(title)
                 img_html = f'<img src="{img_url}" class="book-cover-img" alt="Book Cover">' if img_url else ""
 
-                card_html = f"""
-                <div class="book-card">
-                    {img_html}
-                    <div class="book-card-body">
-                        <div class="book-title">{title}</div>
-                        <div class="card-grid">
-                            <div class="card-col">
-                                <div class="book-info"><span class="book-label">Author:</span> {author}</div>
-                                <div class="book-info"><span class="book-label">Publisher:</span> {publisher}</div>
-                            </div>
-                            <div class="card-col">
-                                <div class="book-info"><span class="book-label">Language:</span> {language}</div>
-                                <div class="shelf-box">📍 Shelf: {shelf_no}</div>
-                            </div>
-                        </div>
-                        <div class="match-box">
-                            {reason} · {score}%
-                        </div>
-                    </div>
-                </div>
-                """
+                # Inline single-line string avoids Streamlit indent-parsing bugs that print raw code
+                card_html = (
+                    f'<div class="book-card">{img_html}'
+                    f'<div class="book-card-body">'
+                    f'<div class="book-title">{title}</div>'
+                    f'<div class="card-grid">'
+                    f'<div class="card-col">'
+                    f'<div class="book-info"><span class="book-label">Author:</span> {author}</div>'
+                    f'<div class="book-info"><span class="book-label">Publisher:</span> {publisher}</div>'
+                    f'</div>'
+                    f'<div class="card-col">'
+                    f'<div class="book-info"><span class="book-label">Language:</span> {language}</div>'
+                    f'<div class="shelf-box">📍 Shelf: {shelf_no}</div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div class="match-box">{reason} · {score}%</div>'
+                    f'</div>'
+                    f'</div>'
+                )
+
                 st.markdown(card_html, unsafe_allow_html=True)
         else:
             st.info("No matching books found. Try full titles, author names, or alternative keywords.")
