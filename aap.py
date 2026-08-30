@@ -226,62 +226,66 @@ def get_all_books():
 @st.cache_data(ttl=300)
 def fetch_woocommerce_book_details(title, isbn=""):
     """
-    Fetches price and images directly from WooCommerce REST API v3 using secrets.toml.
-    Supports fetching multiple images per product match.
+    Queries WooCommerce REST API for price and images.
+    Filters out symbols and attempts SKU matching prior to search fallback.
     """
     if "woocommerce" not in st.secrets:
         return {"price": "N/A", "images": []}
 
-    wc_secrets = st.secrets["woocommerce"]
-    url = wc_secrets.get("url", "").rstrip("/")
-    consumer_key = wc_secrets.get("consumer_key", "")
-    consumer_secret = wc_secrets.get("consumer_secret", "")
+    wc = st.secrets["woocommerce"]
+    url = str(wc.get("url", "")).rstrip("/")
+    consumer_key = str(wc.get("consumer_key", "")).strip()
+    consumer_secret = str(wc.get("consumer_secret", "")).strip()
 
     if not url or not consumer_key or not consumer_secret:
         return {"price": "N/A", "images": []}
 
     endpoint = f"{url}/wp-json/wc/v3/products"
-    
-    # 1. Try searching WooCommerce by ISBN / SKU first if provided
-    params = {}
-    if isbn.strip():
-        params = {"sku": isbn.strip()}
-    else:
-        params = {"search": title.strip()}
+    headers = {"User-Agent": "Mozilla/5.0"}
+    products = []
 
     try:
-        response = requests.get(
-            endpoint,
-            auth=(consumer_key, consumer_secret),
-            params=params,
-            timeout=8
-        )
+        # 1. Try SKU match if ISBN is present
+        if str(isbn).strip():
+            res = requests.get(
+                endpoint,
+                auth=(consumer_key, consumer_secret),
+                params={"sku": str(isbn).strip()},
+                headers=headers,
+                timeout=6
+            )
+            if res.status_code == 200:
+                products = res.json()
 
-        if response.status_code == 200:
-            products = response.json()
-            
-            # 2. Fallback to searching by title if SKU search returned no results
-            if not products and isbn.strip():
-                response = requests.get(
-                    endpoint,
-                    auth=(consumer_key, consumer_secret),
-                    params={"search": title.strip()},
-                    timeout=8
-                )
-                if response.status_code == 200:
-                    products = response.json()
+        # 2. Fallback to title search if no SKU match
+        if not products and title:
+            # Clean special characters from search string
+            clean_search_title = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', str(title)).strip()
+            res = requests.get(
+                endpoint,
+                auth=(consumer_key, consumer_secret),
+                params={"search": clean_search_title, "per_page": 5},
+                headers=headers,
+                timeout=6
+            )
+            if res.status_code == 200:
+                products = res.json()
 
-            if products and len(products) > 0:
-                product = products[0]  # Get best product match
-                
-                # Extract formatted price
-                raw_price = product.get("price", "")
-                price = f"${raw_price}" if raw_price else "N/A"
+        # 3. Process first product match
+        if products and isinstance(products, list) and len(products) > 0:
+            product = products[0]
 
-                # Extract all image URLs attached to the WooCommerce product
-                images = [img["src"] for img in product.get("images", []) if "src" in img]
+            # Price extraction
+            raw_price = product.get("price") or product.get("regular_price") or ""
+            price = f"${raw_price}" if raw_price else "N/A"
 
-                return {"price": price, "images": images}
+            # Images extraction
+            images = []
+            for img in product.get("images", []):
+                if isinstance(img, dict) and img.get("src"):
+                    images.append(img["src"])
+
+            return {"price": price, "images": images}
 
     except Exception:
         pass
@@ -295,7 +299,7 @@ def fetch_woocommerce_book_details(title, isbn=""):
 def normalize_text(text):
     """
     Comprehensive text cleaner for Arabic & English:
-    - Removes corrupted '????' sequences from Arabic text
+    - Ignores corrupted '????' sequences from Arabic text
     - Removes Tashkeel/Diacritics
     - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
     - Strips special symbols/punctuation
@@ -440,7 +444,7 @@ with tab_search:
                 isbn_val = str(book.get("isbn") or "")
                 score_val = int(book.get("match_score", 0))
 
-                # Fetch price & product images directly from WooCommerce
+                # Query WooCommerce API
                 wc_details = fetch_woocommerce_book_details(title_val, isbn_val)
                 price_val = wc_details.get("price", "N/A")
                 image_list = wc_details.get("images", [])
@@ -461,7 +465,7 @@ with tab_search:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Render multiple WooCommerce product images side-by-side
+                # Render multiple images dynamically if returned
                 if image_list:
                     st.caption("📸 **Product Images:**")
                     cols = st.columns(min(len(image_list), 4))
