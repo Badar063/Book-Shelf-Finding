@@ -105,25 +105,26 @@ st.markdown("""
 # USER AUTHENTICATION STATE
 # ==========================================
 
-# Set your admin login credentials here:
-USER_CREDENTIALS = {
-    "admin": "makkah123",
-    "staff": "library2026"
-}
-
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "username" not in st.session_state:
     st.session_state["username"] = ""
 
 def login(username, password):
-    if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-        st.session_state["logged_in"] = True
-        st.session_state["username"] = username
-        st.success(f"Welcome, {username}!")
-        st.rerun()
-    else:
-        st.error("Invalid username or password.")
+    """Authenticates against .streamlit/secrets.toml"""
+    try:
+        secret_user = str(st.secrets["credentials"]["admin_user"])
+        secret_pass = str(st.secrets["credentials"]["admin_password"])
+
+        if str(username) == secret_user and str(password) == secret_pass:
+            st.session_state["logged_in"] = True
+            st.session_state["username"] = username
+            st.success(f"Welcome, {username}!")
+            st.rerun()
+        else:
+            st.error("Invalid username or password.")
+    except KeyError:
+        st.error("Credentials missing in .streamlit/secrets.toml")
 
 def logout():
     st.session_state["logged_in"] = False
@@ -370,18 +371,12 @@ with tab_search:
                 shelf_val = book.get("shelf") or "Unassigned"
                 score_val = int(book.get("match_score", 0))
 
-                # Retrieve details from your API implementation if integrated in your project
-                wc_details = fetch_woocommerce_book_details(title_val, book.get("isbn", "")) if "fetch_woocommerce_book_details" in globals() else {"price": "N/A", "images": []}
-                price_val = wc_details.get("price", "N/A")
-                image_list = wc_details.get("images", [])
-
                 st.markdown(f"""
                     <div class="book-card">
                         <div class="book-title">📖 {title_val}</div>
                         <div class="book-meta">
                             <strong>Author:</strong> {author_val} &nbsp;|&nbsp; 
-                            <strong>Publisher:</strong> {publisher_val} &nbsp;|&nbsp; 
-                            <strong>Price:</strong> {price_val}
+                            <strong>Publisher:</strong> {publisher_val}
                         </div>
                         <div class="badge-container">
                             <span class="badge badge-category">📂 Category: {category_val}</span>
@@ -390,11 +385,6 @@ with tab_search:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-
-                if image_list:
-                    cols = st.columns(min(len(image_list), 4))
-                    for idx, img_url in enumerate(image_list):
-                        cols[idx % len(cols)].image(img_url, use_container_width=True)
 
         else:
             st.warning("No books found matching your query. Try adjusting the search terms.")
