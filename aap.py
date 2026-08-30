@@ -1,6 +1,8 @@
 import sqlite3
 import unicodedata
 import re
+import requests
+from requests.auth import HTTPBasicAuth
 import pandas as pd
 from rapidfuzz import fuzz
 import streamlit as st
@@ -47,11 +49,6 @@ st.markdown("""
         padding: 1.5rem;
         margin-bottom: 1rem;
         box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .book-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
     .book-title {
         color: #1e3c72;
@@ -105,17 +102,43 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# USER AUTHENTICATION STATE
+# ==========================================
+
+# Set your admin login credentials here:
+USER_CREDENTIALS = {
+    "admin": "makkah123",
+    "staff": "library2026"
+}
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "username" not in st.session_state:
+    st.session_state["username"] = ""
+
+def login(username, password):
+    if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+        st.session_state["logged_in"] = True
+        st.session_state["username"] = username
+        st.success(f"Welcome, {username}!")
+        st.rerun()
+    else:
+        st.error("Invalid username or password.")
+
+def logout():
+    st.session_state["logged_in"] = False
+    st.session_state["username"] = ""
+    st.rerun()
+
+# ==========================================
 # DATABASE SET UP & MIGRATION
 # ==========================================
 
 DB_FILE = "library.db"
 
 def init_db():
-    """Initialize SQLite table and automatically patch missing columns."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    
-    # 1. Create main table if it doesn't exist
     c.execute("""
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,7 +154,6 @@ def init_db():
     """)
     conn.commit()
 
-    # 2. Check for missing columns in existing database and add them
     c.execute("PRAGMA table_info(books)")
     existing_columns = [column[1] for column in c.fetchall()]
     
@@ -156,29 +178,16 @@ def init_db():
 init_db()
 
 def add_books_from_df(df):
-    """Imports dataframe records safely even with varying column names/count."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # Standardize column headers
     df.columns = [str(col).strip().lower() for col in df.columns]
 
     column_mapping = {
-        "title": "title",
-        "book title": "title",
-        "book name": "title",
-        "name": "title",
-        "author": "author",
-        "publisher": "publisher",
-        "isbn": "isbn",
-        "year": "year",
-        "category": "category",
-        "language": "language",
-        "shelf": "shelf",
-        "shelf location": "shelf",
-        "shelf number": "shelf",
-        "shelf no": "shelf",
-        "shelf no.": "shelf"
+        "title": "title", "book title": "title", "book name": "title", "name": "title",
+        "author": "author", "publisher": "publisher", "isbn": "isbn", "year": "year",
+        "category": "category", "language": "language", "shelf": "shelf",
+        "shelf location": "shelf", "shelf number": "shelf", "shelf no": "shelf", "shelf no.": "shelf"
     }
 
     df = df.rename(columns=column_mapping)
@@ -207,94 +216,66 @@ def add_books_from_df(df):
     conn.close()
 
 def clear_database():
-    """Removes all data from the database table."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM books")
     conn.commit()
     conn.close()
 
+def delete_single_book(book_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM books WHERE id = ?", (book_id,))
+    conn.commit()
+    conn.close()
+
 def get_all_books():
-    """Retrieves all library records."""
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM books", conn)
     conn.close()
     return df
 
 # ==========================================
-# ADVANCED NORMALIZATION & SEARCH LOGIC
+# TEXT NORMALIZATION & SEARCH LOGIC
 # ==========================================
 
 def normalize_text(text):
-    """
-    Comprehensive text cleaner for Arabic & English:
-    - Removes Tashkeel/Diacritics
-    - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
-    - Strips special symbols/punctuation (; & : - / ?)
-    - Removes common stop words (and, or, the, of, و)
-    - Normalizes English transliterations (ee -> i, oo -> u)
-    """
     if not isinstance(text, str):
         return ""
 
-    # 1. Remove Tashkeel / Harakat
+    text = re.sub(r'\?+', ' ', text)
+
     tashkeel_regex = re.compile(r'[\u0617-\u061A\u064B-\u0652]')
     text = re.sub(tashkeel_regex, '', text)
 
-    # 2. Normalize Arabic character variants
     text = re.sub(r'[أإآٱ]', 'ا', text)
     text = re.sub(r'ى', 'ي', text)
     text = re.sub(r'ة', 'ه', text)
     text = re.sub(r'ؤ', 'و', text)
     text = re.sub(r'ئ', 'ي', text)
 
-    # 3. Strip special characters, punctuation, and symbols
     text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
 
-    # 4. Strip Latin accents & convert to lowercase
     text = ''.join(
         c for c in unicodedata.normalize('NFD', text)
         if unicodedata.category(c) != 'Mn'
     )
     text = text.lower().strip()
 
-    # 5. Remove stop words & apply transliteration rules
     stop_words = {"and", "or", "the", "of", "in", "by", "a", "an", "و"}
     words = text.split()
-    processed_words = []
-    
-    transliteration_rules = [
-        (r'ee', 'i'),
-        (r'oo', 'u'),
-        (r'ah$', 'a'),
-        (r'at$', 'a'),
-    ]
-
-    for word in words:
-        if word in stop_words:
-            continue
-        if re.search(r'[a-z]', word):
-            for rule, replacement in transliteration_rules:
-                word = re.sub(rule, replacement, word)
-        processed_words.append(word)
+    processed_words = [w for w in words if w not in stop_words]
 
     return " ".join(processed_words)
 
-def calculate_best_match(query_norm, target_norm):
-    """Computes similarity score using token set ratio and partial ratio."""
-    if not target_norm:
-        return 0
-    partial = fuzz.partial_ratio(query_norm, target_norm)
-    token_set = fuzz.token_set_ratio(query_norm, target_norm)
-    return max(partial, token_set)
-
 def search_books(query, threshold=60):
-    """Performs search across titles, authors, and publishers."""
     df = get_all_books()
     if df.empty or not query.strip():
         return pd.DataFrame()
 
     query_norm = normalize_text(query)
+    if not query_norm:
+        return pd.DataFrame()
 
     results = []
     for _, row in df.iterrows():
@@ -302,11 +283,11 @@ def search_books(query, threshold=60):
         author_norm = normalize_text(row.get("author", ""))
         publisher_norm = normalize_text(row.get("publisher", ""))
 
-        title_score = calculate_best_match(query_norm, title_norm)
-        author_score = calculate_best_match(query_norm, author_norm)
-        publisher_score = calculate_best_match(query_norm, publisher_norm)
+        t_score = max(fuzz.partial_ratio(query_norm, title_norm), fuzz.token_set_ratio(query_norm, title_norm))
+        a_score = max(fuzz.partial_ratio(query_norm, author_norm), fuzz.token_set_ratio(query_norm, author_norm))
+        p_score = max(fuzz.partial_ratio(query_norm, publisher_norm), fuzz.token_set_ratio(query_norm, publisher_norm))
 
-        max_score = max(title_score, author_score, publisher_score)
+        max_score = max(t_score, a_score, p_score)
 
         if max_score >= threshold:
             row_dict = row.to_dict()
@@ -320,36 +301,58 @@ def search_books(query, threshold=60):
     return result_df
 
 # ==========================================
+# SIDEBAR LOGIN & PORTAL
+# ==========================================
+
+with st.sidebar:
+    st.header("👤 Staff Login")
+    
+    if st.session_state["logged_in"]:
+        st.success(f"Logged in as: **{st.session_state['username']}**")
+        if st.button("Log Out"):
+            logout()
+    else:
+        st.info("Staff members can log in here to manage uploads and database settings.")
+        with st.form("login_form"):
+            input_user = st.text_input("Username")
+            input_pass = st.text_input("Password", type="password")
+            submit_login = st.form_submit_button("Log In")
+            
+            if submit_login:
+                login(input_user, input_pass)
+
+# ==========================================
 # STREAMLIT USER INTERFACE
 # ==========================================
 
 st.markdown("""
     <div class="header-banner">
         <h1>📚 Dar Makkah International</h1>
-        <p>Library Catalogue & Search System</p>
+        <p>Library Catalogue & Shelf Location Finder</p>
     </div>
 """, unsafe_allow_html=True)
 
-tab_search, tab_admin = st.tabs(["🔍 Search Catalogue", "⚙️ Admin & Catalogue Management"])
+# Dynamic tab display: Customer Search is always visible; Admin tab requires login
+if st.session_state["logged_in"]:
+    tab_search, tab_admin = st.tabs(["🔍 Customer Book Search", "⚙️ Admin & Sheet Management"])
+else:
+    tab_search, = st.tabs(["🔍 Customer Book Search"])
+    tab_admin = None
 
-# TAB 1: SEARCH
+# ------------------------------------------
+# TAB 1: CUSTOMER BOOK SEARCH
+# ------------------------------------------
 with tab_search:
-    st.subheader("Search Library Collection")
+    st.subheader("Find Books & Shelf Locations")
     
     search_query = st.text_input(
-        "Enter title, author, or publisher name:",
-        placeholder="e.g., sunn;ah, Sahih & Bukhari, Seerah...",
-        key="search_input"
+        "Search by book title, author, or publisher:",
+        placeholder="e.g., Bukhari, Seerah, Riyadh...",
+        key="customer_search_input"
     )
 
-    with st.expander("⚙️ Search Options & Sensitivity", expanded=False):
-        match_threshold = st.slider(
-            "Match Sensitivity Level",
-            min_value=30,
-            max_value=100,
-            value=60,
-            help="Lower values yield broader results; higher values require closer matches."
-        )
+    with st.expander("⚙️ Search Match Options", expanded=False):
+        match_threshold = st.slider("Sensitivity Level", min_value=30, max_value=100, value=60)
 
     st.markdown("---")
 
@@ -367,65 +370,85 @@ with tab_search:
                 shelf_val = book.get("shelf") or "Unassigned"
                 score_val = int(book.get("match_score", 0))
 
+                # Retrieve details from your API implementation if integrated in your project
+                wc_details = fetch_woocommerce_book_details(title_val, book.get("isbn", "")) if "fetch_woocommerce_book_details" in globals() else {"price": "N/A", "images": []}
+                price_val = wc_details.get("price", "N/A")
+                image_list = wc_details.get("images", [])
+
                 st.markdown(f"""
                     <div class="book-card">
                         <div class="book-title">📖 {title_val}</div>
                         <div class="book-meta">
                             <strong>Author:</strong> {author_val} &nbsp;|&nbsp; 
-                            <strong>Publisher:</strong> {publisher_val}
+                            <strong>Publisher:</strong> {publisher_val} &nbsp;|&nbsp; 
+                            <strong>Price:</strong> {price_val}
                         </div>
                         <div class="badge-container">
                             <span class="badge badge-category">📂 Category: {category_val}</span>
-                            <span class="badge badge-shelf">📍 Shelf: {shelf_val}</span>
-                            <span class="badge badge-match">Match Score: {score_val}%</span>
+                            <span class="badge badge-shelf">📍 Shelf Location: {shelf_val}</span>
+                            <span class="badge badge-match">Match: {score_val}%</span>
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+
+                if image_list:
+                    cols = st.columns(min(len(image_list), 4))
+                    for idx, img_url in enumerate(image_list):
+                        cols[idx % len(cols)].image(img_url, use_container_width=True)
+
         else:
-            st.warning("No matching books found. Try broadening your query or adjusting the sensitivity slider.")
+            st.warning("No books found matching your query. Try adjusting the search terms.")
     else:
-        st.info("Enter a query above to start searching the catalogue.")
+        st.info("Use the search bar above to look up titles, authors, and shelf locations.")
 
-# TAB 2: ADMIN
-with tab_admin:
-    st.subheader("Catalogue Management Panel")
+# ------------------------------------------
+# TAB 2: ADMIN MANAGEMENT (LOGGED-IN ONLY)
+# ------------------------------------------
+if st.session_state["logged_in"] and tab_admin is not None:
+    with tab_admin:
+        st.subheader("Admin Control Panel")
 
-    df_current = get_all_books()
-    st.metric(label="Total Registered Books", value=len(df_current))
-    st.markdown("---")
-
-    col_upload, col_danger = st.columns([2, 1])
-
-    with col_upload:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.write("### 📥 Import Spreadsheet")
-        uploaded_file = st.file_uploader(
-            "Upload Excel File (.xlsx, .xls)", 
-            type=["xlsx", "xls"]
-        )
-
-        if uploaded_file is not None:
-            if st.button("Process & Import Data", type="primary"):
-                try:
-                    df_upload = pd.read_excel(uploaded_file)
-                    add_books_from_df(df_upload)
-                    st.success(f"Successfully imported records from {uploaded_file.name}!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to process file: {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col_danger:
-        st.markdown('<div class="admin-card">', unsafe_allow_html=True)
-        st.write("### 🚨 Database Actions")
-        st.caption("Permanently clear the library catalogue database.")
-        if st.button("Clear All Database Records", type="secondary"):
-            clear_database()
-            st.success("Database table reset successfully.")
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    if not df_current.empty:
+        df_current = get_all_books()
+        st.metric(label="Total Books in Database", value=len(df_current))
         st.markdown("---")
-        st.write("### Complete Database Overview")
-        st.dataframe(df_current, use_container_width=True)
+
+        col_upload, col_danger = st.columns([2, 1])
+
+        with col_upload:
+            st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+            st.write("### 📥 Upload Excel Spreadsheet")
+            uploaded_file = st.file_uploader("Upload Excel File (.xlsx, .xls)", type=["xlsx", "xls"])
+
+            if uploaded_file is not None:
+                if st.button("Import Spreadsheet to Database", type="primary"):
+                    try:
+                        df_upload = pd.read_excel(uploaded_file)
+                        add_books_from_df(df_upload)
+                        st.success(f"Successfully imported records from {uploaded_file.name}!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to import file: {e}")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        with col_danger:
+            st.markdown('<div class="admin-card">', unsafe_allow_html=True)
+            st.write("### 🚨 Reset Database")
+            st.caption("Remove all book records from the database.")
+            if st.button("Delete All Records", type="secondary"):
+                clear_database()
+                st.success("Database cleared successfully.")
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        if not df_current.empty:
+            st.markdown("---")
+            st.write("### Current Database Records")
+            
+            for idx, row in df_current.iterrows():
+                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
+                c1.write(f"**{row['title']}**")
+                c2.write(f"Author: {row['author']}")
+                c3.write(f"Shelf: `{row['shelf']}`")
+                if c4.button("🗑️ Delete", key=f"delete_btn_{row['id']}"):
+                    delete_single_book(row['id'])
+                    st.rerun()
