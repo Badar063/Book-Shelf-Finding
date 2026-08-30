@@ -116,7 +116,6 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
-    # 1. Create main table if it doesn't exist
     c.execute("""
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +131,6 @@ def init_db():
     """)
     conn.commit()
 
-    # 2. Check for missing columns in existing database and add them
     c.execute("PRAGMA table_info(books)")
     existing_columns = [column[1] for column in c.fetchall()]
     
@@ -161,7 +159,6 @@ def add_books_from_df(df):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # Standardize column headers
     df.columns = [str(col).strip().lower() for col in df.columns]
 
     column_mapping = {
@@ -223,43 +220,69 @@ def get_all_books():
     return df
 
 # ==========================================
-# REST API INTEGRATION VIA SECRETS.TOML
+# WOOCOMMERCE REST API INTEGRATION
 # ==========================================
 
 @st.cache_data(ttl=300)
-def fetch_api_book_details(title, isbn=""):
+def fetch_woocommerce_book_details(title, isbn=""):
     """
-    Fetches price and image URLs from REST API defined in .streamlit/secrets.toml.
-    Supports multiple image URLs for matches.
+    Fetches price and images directly from WooCommerce REST API v3 using secrets.toml.
+    Supports fetching multiple images per product match.
     """
-    if "api" not in st.secrets:
+    if "woocommerce" not in st.secrets:
         return {"price": "N/A", "images": []}
 
-    api_url = st.secrets["api"].get("url", "")
-    api_key = st.secrets["api"].get("key") or st.secrets["api"].get("token", "")
+    wc_secrets = st.secrets["woocommerce"]
+    url = wc_secrets.get("url", "").rstrip("/")
+    consumer_key = wc_secrets.get("consumer_key", "")
+    consumer_secret = wc_secrets.get("consumer_secret", "")
 
-    if not api_url:
+    if not url or not consumer_key or not consumer_secret:
         return {"price": "N/A", "images": []}
 
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    params = {"title": title, "isbn": isbn}
+    endpoint = f"{url}/wp-json/wc/v3/products"
+    
+    # 1. Try searching WooCommerce by ISBN / SKU first if provided
+    params = {}
+    if isbn.strip():
+        params = {"sku": isbn.strip()}
+    else:
+        params = {"search": title.strip()}
 
     try:
-        response = requests.get(api_url, headers=headers, params=params, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            # Parse responses returning price and list or single string of images
-            price = data.get("price", "N/A")
-            raw_images = data.get("images", data.get("image", []))
-            
-            if isinstance(raw_images, str):
-                images = [raw_images] if raw_images else []
-            elif isinstance(raw_images, list):
-                images = [img for img in raw_images if isinstance(img, str) and img]
-            else:
-                images = []
+        response = requests.get(
+            endpoint,
+            auth=(consumer_key, consumer_secret),
+            params=params,
+            timeout=8
+        )
 
-            return {"price": price, "images": images}
+        if response.status_code == 200:
+            products = response.json()
+            
+            # 2. Fallback to searching by title if SKU search returned no results
+            if not products and isbn.strip():
+                response = requests.get(
+                    endpoint,
+                    auth=(consumer_key, consumer_secret),
+                    params={"search": title.strip()},
+                    timeout=8
+                )
+                if response.status_code == 200:
+                    products = response.json()
+
+            if products and len(products) > 0:
+                product = products[0]  # Get best product match
+                
+                # Extract formatted price
+                raw_price = product.get("price", "")
+                price = f"${raw_price}" if raw_price else "N/A"
+
+                # Extract all image URLs attached to the WooCommerce product
+                images = [img["src"] for img in product.get("images", []) if "src" in img]
+
+                return {"price": price, "images": images}
+
     except Exception:
         pass
 
@@ -272,17 +295,16 @@ def fetch_api_book_details(title, isbn=""):
 def normalize_text(text):
     """
     Comprehensive text cleaner for Arabic & English:
-    - Removes question mark sequences (????) and unreadable non-printable tokens
+    - Removes corrupted '????' sequences from Arabic text
     - Removes Tashkeel/Diacritics
     - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
-    - Strips special symbols/punctuation (; & : - / ?)
-    - Removes common stop words (and, or, the, of, و)
-    - Normalizes English transliterations (ee -> i, oo -> u)
+    - Strips special symbols/punctuation
+    - Removes common stop words
     """
     if not isinstance(text, str):
         return ""
 
-    # Ignore/remove sequences of question marks resulting from encoding issues (e.g., Arabic ????)
+    # Clean question mark sequences from encoding errors
     text = re.sub(r'\?+', ' ', text)
 
     # 1. Remove Tashkeel / Harakat
@@ -415,13 +437,13 @@ with tab_search:
                 publisher_val = book.get("publisher") or "Unknown Publisher"
                 category_val = book.get("category") or "General"
                 shelf_val = book.get("shelf") or "Unassigned"
-                isbn_val = book.get("isbn") or ""
+                isbn_val = str(book.get("isbn") or "")
                 score_val = int(book.get("match_score", 0))
 
-                # Fetch price and image assets via secrets.toml REST API endpoint
-                api_details = fetch_api_book_details(title_val, isbn_val)
-                price_val = api_details.get("price", "N/A")
-                image_list = api_details.get("images", [])
+                # Fetch price & product images directly from WooCommerce
+                wc_details = fetch_woocommerce_book_details(title_val, isbn_val)
+                price_val = wc_details.get("price", "N/A")
+                image_list = wc_details.get("images", [])
 
                 st.markdown(f"""
                     <div class="book-card">
@@ -439,13 +461,12 @@ with tab_search:
                     </div>
                 """, unsafe_allow_html=True)
 
-                # Render multiple images dynamically if returned by API
+                # Render multiple WooCommerce product images side-by-side
                 if image_list:
-                    st.caption("📸 **Book Cover / Images:**")
+                    st.caption("📸 **Product Images:**")
                     cols = st.columns(min(len(image_list), 4))
                     for idx, img_url in enumerate(image_list):
-                        col_target = cols[idx % len(cols)]
-                        col_target.image(img_url, use_column_width=True)
+                        cols[idx % len(cols)].image(img_url, use_container_width=True)
 
         else:
             st.warning("No matching books found. Try broadening your query or adjusting the sensitivity slider.")
