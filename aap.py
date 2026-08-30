@@ -105,14 +105,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# DATABASE SET UP
+# DATABASE SET UP & MIGRATION
 # ==========================================
 
 DB_FILE = "library.db"
 
 def init_db():
+    """Initialize SQLite table and automatically patch missing columns."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
+    # 1. Create main table if it doesn't exist
     c.execute("""
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,17 +130,44 @@ def init_db():
         )
     """)
     conn.commit()
+
+    # 2. Check for missing columns in existing database and add them
+    c.execute("PRAGMA table_info(books)")
+    existing_columns = [column[1] for column in c.fetchall()]
+    
+    required_columns = {
+        "title": "TEXT",
+        "author": "TEXT",
+        "publisher": "TEXT",
+        "isbn": "TEXT",
+        "year": "TEXT",
+        "category": "TEXT",
+        "language": "TEXT",
+        "shelf": "TEXT"
+    }
+
+    for col_name, col_type in required_columns.items():
+        if col_name not in existing_columns:
+            c.execute(f"ALTER TABLE books ADD COLUMN {col_name} {col_type}")
+
+    conn.commit()
     conn.close()
 
 init_db()
 
 def add_books_from_df(df):
+    """Imports dataframe records safely even with varying column names/count."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
+    # Standardize column headers
+    df.columns = [str(col).strip().lower() for col in df.columns]
 
     column_mapping = {
         "title": "title",
         "book title": "title",
+        "book name": "title",
+        "name": "title",
         "author": "author",
         "publisher": "publisher",
         "isbn": "isbn",
@@ -145,10 +175,12 @@ def add_books_from_df(df):
         "category": "category",
         "language": "language",
         "shelf": "shelf",
-        "shelf location": "shelf"
+        "shelf location": "shelf",
+        "shelf number": "shelf",
+        "shelf no": "shelf",
+        "shelf no.": "shelf"
     }
 
-    df.columns = [str(col).strip().lower() for col in df.columns]
     df = df.rename(columns=column_mapping)
 
     expected_cols = ["title", "author", "publisher", "isbn", "year", "category", "language", "shelf"]
@@ -175,6 +207,7 @@ def add_books_from_df(df):
     conn.close()
 
 def clear_database():
+    """Removes all data from the database table."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM books")
@@ -182,6 +215,7 @@ def clear_database():
     conn.close()
 
 def get_all_books():
+    """Retrieves all library records."""
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM books", conn)
     conn.close()
@@ -192,15 +226,22 @@ def get_all_books():
 # ==========================================
 
 def normalize_text(text):
-    """Normalize Arabic character variations, special characters, and stop words."""
+    """
+    Comprehensive text cleaner for Arabic & English:
+    - Removes Tashkeel/Diacritics
+    - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
+    - Strips special symbols/punctuation (; & : - / ?)
+    - Removes common stop words (and, or, the, of, و)
+    - Normalizes English transliterations (ee -> i, oo -> u)
+    """
     if not isinstance(text, str):
         return ""
 
-    # 1. Strip Arabic Tashkeel
+    # 1. Remove Tashkeel / Harakat
     tashkeel_regex = re.compile(r'[\u0617-\u061A\u064B-\u0652]')
     text = re.sub(tashkeel_regex, '', text)
 
-    # 2. Normalize Arabic character forms
+    # 2. Normalize Arabic character variants
     text = re.sub(r'[أإآٱ]', 'ا', text)
     text = re.sub(r'ى', 'ي', text)
     text = re.sub(r'ة', 'ه', text)
@@ -210,14 +251,14 @@ def normalize_text(text):
     # 3. Strip special characters, punctuation, and symbols
     text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
 
-    # 4. Strip Latin accents & lowercase
+    # 4. Strip Latin accents & convert to lowercase
     text = ''.join(
         c for c in unicodedata.normalize('NFD', text)
         if unicodedata.category(c) != 'Mn'
     )
     text = text.lower().strip()
 
-    # 5. Filter stop words & apply transliteration rules
+    # 5. Remove stop words & apply transliteration rules
     stop_words = {"and", "or", "the", "of", "in", "by", "a", "an", "و"}
     words = text.split()
     processed_words = []
@@ -240,7 +281,7 @@ def normalize_text(text):
     return " ".join(processed_words)
 
 def calculate_best_match(query_norm, target_norm):
-    """Computes similarity using token set ratio and partial ratio."""
+    """Computes similarity score using token set ratio and partial ratio."""
     if not target_norm:
         return 0
     partial = fuzz.partial_ratio(query_norm, target_norm)
@@ -248,7 +289,7 @@ def calculate_best_match(query_norm, target_norm):
     return max(partial, token_set)
 
 def search_books(query, threshold=60):
-    """Search catalogue using normalized exact and fuzzy matching."""
+    """Performs search across titles, authors, and publishers."""
     df = get_all_books()
     if df.empty or not query.strip():
         return pd.DataFrame()
