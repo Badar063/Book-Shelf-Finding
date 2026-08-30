@@ -1,7 +1,6 @@
 import sqlite3
 import unicodedata
 import re
-import requests
 import pandas as pd
 from rapidfuzz import fuzz
 import streamlit as st
@@ -116,6 +115,7 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # 1. Create main table if it doesn't exist
     c.execute("""
         CREATE TABLE IF NOT EXISTS books (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,6 +131,7 @@ def init_db():
     """)
     conn.commit()
 
+    # 2. Check for missing columns in existing database and add them
     c.execute("PRAGMA table_info(books)")
     existing_columns = [column[1] for column in c.fetchall()]
     
@@ -159,6 +160,7 @@ def add_books_from_df(df):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
+    # Standardize column headers
     df.columns = [str(col).strip().lower() for col in df.columns]
 
     column_mapping = {
@@ -220,96 +222,20 @@ def get_all_books():
     return df
 
 # ==========================================
-# WOOCOMMERCE REST API INTEGRATION
-# ==========================================
-
-@st.cache_data(ttl=300)
-def fetch_woocommerce_book_details(title, isbn=""):
-    """
-    Queries WooCommerce REST API for price and images.
-    Filters out symbols and attempts SKU matching prior to search fallback.
-    """
-    if "woocommerce" not in st.secrets:
-        return {"price": "N/A", "images": []}
-
-    wc = st.secrets["woocommerce"]
-    url = str(wc.get("url", "")).rstrip("/")
-    consumer_key = str(wc.get("consumer_key", "")).strip()
-    consumer_secret = str(wc.get("consumer_secret", "")).strip()
-
-    if not url or not consumer_key or not consumer_secret:
-        return {"price": "N/A", "images": []}
-
-    endpoint = f"{url}/wp-json/wc/v3/products"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    products = []
-
-    try:
-        # 1. Try SKU match if ISBN is present
-        if str(isbn).strip():
-            res = requests.get(
-                endpoint,
-                auth=(consumer_key, consumer_secret),
-                params={"sku": str(isbn).strip()},
-                headers=headers,
-                timeout=6
-            )
-            if res.status_code == 200:
-                products = res.json()
-
-        # 2. Fallback to title search if no SKU match
-        if not products and title:
-            # Clean special characters from search string
-            clean_search_title = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', str(title)).strip()
-            res = requests.get(
-                endpoint,
-                auth=(consumer_key, consumer_secret),
-                params={"search": clean_search_title, "per_page": 5},
-                headers=headers,
-                timeout=6
-            )
-            if res.status_code == 200:
-                products = res.json()
-
-        # 3. Process first product match
-        if products and isinstance(products, list) and len(products) > 0:
-            product = products[0]
-
-            # Price extraction
-            raw_price = product.get("price") or product.get("regular_price") or ""
-            price = f"${raw_price}" if raw_price else "N/A"
-
-            # Images extraction
-            images = []
-            for img in product.get("images", []):
-                if isinstance(img, dict) and img.get("src"):
-                    images.append(img["src"])
-
-            return {"price": price, "images": images}
-
-    except Exception:
-        pass
-
-    return {"price": "N/A", "images": []}
-
-# ==========================================
 # ADVANCED NORMALIZATION & SEARCH LOGIC
 # ==========================================
 
 def normalize_text(text):
     """
     Comprehensive text cleaner for Arabic & English:
-    - Ignores corrupted '????' sequences from Arabic text
     - Removes Tashkeel/Diacritics
     - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
-    - Strips special symbols/punctuation
-    - Removes common stop words
+    - Strips special symbols/punctuation (; & : - / ?)
+    - Removes common stop words (and, or, the, of, و)
+    - Normalizes English transliterations (ee -> i, oo -> u)
     """
     if not isinstance(text, str):
         return ""
-
-    # Clean question mark sequences from encoding errors
-    text = re.sub(r'\?+', ' ', text)
 
     # 1. Remove Tashkeel / Harakat
     tashkeel_regex = re.compile(r'[\u0617-\u061A\u064B-\u0652]')
@@ -345,7 +271,7 @@ def normalize_text(text):
     ]
 
     for word in words:
-        if word in stop_words or word.startswith("?"):
+        if word in stop_words:
             continue
         if re.search(r'[a-z]', word):
             for rule, replacement in transliteration_rules:
@@ -369,8 +295,6 @@ def search_books(query, threshold=60):
         return pd.DataFrame()
 
     query_norm = normalize_text(query)
-    if not query_norm:
-        return pd.DataFrame()
 
     results = []
     for _, row in df.iterrows():
@@ -441,21 +365,14 @@ with tab_search:
                 publisher_val = book.get("publisher") or "Unknown Publisher"
                 category_val = book.get("category") or "General"
                 shelf_val = book.get("shelf") or "Unassigned"
-                isbn_val = str(book.get("isbn") or "")
                 score_val = int(book.get("match_score", 0))
-
-                # Query WooCommerce API
-                wc_details = fetch_woocommerce_book_details(title_val, isbn_val)
-                price_val = wc_details.get("price", "N/A")
-                image_list = wc_details.get("images", [])
 
                 st.markdown(f"""
                     <div class="book-card">
                         <div class="book-title">📖 {title_val}</div>
                         <div class="book-meta">
                             <strong>Author:</strong> {author_val} &nbsp;|&nbsp; 
-                            <strong>Publisher:</strong> {publisher_val} &nbsp;|&nbsp; 
-                            <strong>Price:</strong> {price_val}
+                            <strong>Publisher:</strong> {publisher_val}
                         </div>
                         <div class="badge-container">
                             <span class="badge badge-category">📂 Category: {category_val}</span>
@@ -464,14 +381,6 @@ with tab_search:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-
-                # Render multiple images dynamically if returned
-                if image_list:
-                    st.caption("📸 **Product Images:**")
-                    cols = st.columns(min(len(image_list), 4))
-                    for idx, img_url in enumerate(image_list):
-                        cols[idx % len(cols)].image(img_url, use_container_width=True)
-
         else:
             st.warning("No matching books found. Try broadening your query or adjusting the sensitivity slider.")
     else:
