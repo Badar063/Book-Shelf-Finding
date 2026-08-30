@@ -16,15 +16,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for enhanced UI/UX
 st.markdown("""
     <style>
-    /* Main Background & Font Styling */
     .stApp {
         background-color: #f4f6f9;
     }
-    
-    /* Header Container */
     .header-banner {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
         color: white;
@@ -44,8 +40,6 @@ st.markdown("""
         font-size: 1.1rem;
         margin-bottom: 0;
     }
-
-    /* Result Cards */
     .book-card {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -70,8 +64,6 @@ st.markdown("""
         font-size: 0.95rem;
         margin-bottom: 0.75rem;
     }
-    
-    /* Tags & Badges */
     .badge-container {
         display: flex;
         gap: 0.5rem;
@@ -102,8 +94,6 @@ st.markdown("""
         border: 1px solid #c6f6d5;
         margin-left: auto;
     }
-
-    /* Admin Container Styling */
     .admin-card {
         background-color: #ffffff;
         border-radius: 10px;
@@ -121,7 +111,6 @@ st.markdown("""
 DB_FILE = "library.db"
 
 def init_db():
-    """Initialize the SQLite database schema if it doesn't exist."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
@@ -143,7 +132,6 @@ def init_db():
 init_db()
 
 def add_books_from_df(df):
-    """Import records from a Pandas DataFrame into the SQLite database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -187,7 +175,6 @@ def add_books_from_df(df):
     conn.close()
 
 def clear_database():
-    """Clear all records from the database table."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("DELETE FROM books")
@@ -195,33 +182,73 @@ def clear_database():
     conn.close()
 
 def get_all_books():
-    """Retrieve all books from the database."""
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT * FROM books", conn)
     conn.close()
     return df
 
 # ==========================================
-# SEARCH & HELPER FUNCTIONS
+# ADVANCED NORMALIZATION & SEARCH LOGIC
 # ==========================================
 
 def normalize_text(text):
-    """Normalize text for searching: remove diacritics, extra spaces, and lower case."""
+    """Normalize Arabic character variations, special characters, and stop words."""
     if not isinstance(text, str):
         return ""
 
-    arabic_diacritics = re.compile(r'[\u064B-\u0652]')
-    text = re.sub(arabic_diacritics, '', text)
+    # 1. Strip Arabic Tashkeel
+    tashkeel_regex = re.compile(r'[\u0617-\u061A\u064B-\u0652]')
+    text = re.sub(tashkeel_regex, '', text)
 
+    # 2. Normalize Arabic character forms
+    text = re.sub(r'[أإآٱ]', 'ا', text)
+    text = re.sub(r'ى', 'ي', text)
+    text = re.sub(r'ة', 'ه', text)
+    text = re.sub(r'ؤ', 'و', text)
+    text = re.sub(r'ئ', 'ي', text)
+
+    # 3. Strip special characters, punctuation, and symbols
+    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
+
+    # 4. Strip Latin accents & lowercase
     text = ''.join(
         c for c in unicodedata.normalize('NFD', text)
         if unicodedata.category(c) != 'Mn'
     )
+    text = text.lower().strip()
 
-    return text.lower().strip()
+    # 5. Filter stop words & apply transliteration rules
+    stop_words = {"and", "or", "the", "of", "in", "by", "a", "an", "و"}
+    words = text.split()
+    processed_words = []
+    
+    transliteration_rules = [
+        (r'ee', 'i'),
+        (r'oo', 'u'),
+        (r'ah$', 'a'),
+        (r'at$', 'a'),
+    ]
+
+    for word in words:
+        if word in stop_words:
+            continue
+        if re.search(r'[a-z]', word):
+            for rule, replacement in transliteration_rules:
+                word = re.sub(rule, replacement, word)
+        processed_words.append(word)
+
+    return " ".join(processed_words)
+
+def calculate_best_match(query_norm, target_norm):
+    """Computes similarity using token set ratio and partial ratio."""
+    if not target_norm:
+        return 0
+    partial = fuzz.partial_ratio(query_norm, target_norm)
+    token_set = fuzz.token_set_ratio(query_norm, target_norm)
+    return max(partial, token_set)
 
 def search_books(query, threshold=60):
-    """Search catalogue using exact and fuzzy matching techniques."""
+    """Search catalogue using normalized exact and fuzzy matching."""
     df = get_all_books()
     if df.empty or not query.strip():
         return pd.DataFrame()
@@ -234,9 +261,9 @@ def search_books(query, threshold=60):
         author_norm = normalize_text(row.get("author", ""))
         publisher_norm = normalize_text(row.get("publisher", ""))
 
-        title_score = fuzz.partial_ratio(query_norm, title_norm)
-        author_score = fuzz.partial_ratio(query_norm, author_norm)
-        publisher_score = fuzz.partial_ratio(query_norm, publisher_norm)
+        title_score = calculate_best_match(query_norm, title_norm)
+        author_score = calculate_best_match(query_norm, author_norm)
+        publisher_score = calculate_best_match(query_norm, publisher_norm)
 
         max_score = max(title_score, author_score, publisher_score)
 
@@ -255,7 +282,6 @@ def search_books(query, threshold=60):
 # STREAMLIT USER INTERFACE
 # ==========================================
 
-# Top Banner Header
 st.markdown("""
     <div class="header-banner">
         <h1>📚 Dar Makkah International</h1>
@@ -263,19 +289,15 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# Main Navigation Tabs
 tab_search, tab_admin = st.tabs(["🔍 Search Catalogue", "⚙️ Admin & Catalogue Management"])
 
-# ------------------------------------------
-# TAB 1: SEARCH CATALOGUE
-# ------------------------------------------
+# TAB 1: SEARCH
 with tab_search:
     st.subheader("Search Library Collection")
     
-    # Primary Search Input Controls
     search_query = st.text_input(
         "Enter title, author, or publisher name:",
-        placeholder="e.g., Sahih Al-Bukhari, Ibn Kathir...",
+        placeholder="e.g., sunn;ah, Sahih & Bukhari, Seerah...",
         key="search_input"
     )
 
@@ -297,7 +319,6 @@ with tab_search:
             st.markdown(f"**Found {len(results)} matching record(s):**")
             
             for _, book in results.iterrows():
-                # Safe attribute extraction to avoid KeyErrors
                 title_val = book.get("title") or "Untitled"
                 author_val = book.get("author") or "Unknown Author"
                 publisher_val = book.get("publisher") or "Unknown Publisher"
@@ -324,15 +345,11 @@ with tab_search:
     else:
         st.info("Enter a query above to start searching the catalogue.")
 
-# ------------------------------------------
-# TAB 2: ADMIN & IMPORT
-# ------------------------------------------
+# TAB 2: ADMIN
 with tab_admin:
     st.subheader("Catalogue Management Panel")
 
     df_current = get_all_books()
-    
-    # Overview metrics
     st.metric(label="Total Registered Books", value=len(df_current))
     st.markdown("---")
 
@@ -343,8 +360,7 @@ with tab_admin:
         st.write("### 📥 Import Spreadsheet")
         uploaded_file = st.file_uploader(
             "Upload Excel File (.xlsx, .xls)", 
-            type=["xlsx", "xls"],
-            help="Ensure headers contain Title, Author, Publisher, Category, Shelf Location, etc."
+            type=["xlsx", "xls"]
         )
 
         if uploaded_file is not None:
