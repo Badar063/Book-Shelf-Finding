@@ -1,6 +1,7 @@
 import sqlite3
 import unicodedata
 import re
+import requests
 import pandas as pd
 from rapidfuzz import fuzz
 import streamlit as st
@@ -222,12 +223,56 @@ def get_all_books():
     return df
 
 # ==========================================
+# REST API INTEGRATION VIA SECRETS.TOML
+# ==========================================
+
+@st.cache_data(ttl=300)
+def fetch_api_book_details(title, isbn=""):
+    """
+    Fetches price and image URLs from REST API defined in .streamlit/secrets.toml.
+    Supports multiple image URLs for matches.
+    """
+    if "api" not in st.secrets:
+        return {"price": "N/A", "images": []}
+
+    api_url = st.secrets["api"].get("url", "")
+    api_key = st.secrets["api"].get("key") or st.secrets["api"].get("token", "")
+
+    if not api_url:
+        return {"price": "N/A", "images": []}
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    params = {"title": title, "isbn": isbn}
+
+    try:
+        response = requests.get(api_url, headers=headers, params=params, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            # Parse responses returning price and list or single string of images
+            price = data.get("price", "N/A")
+            raw_images = data.get("images", data.get("image", []))
+            
+            if isinstance(raw_images, str):
+                images = [raw_images] if raw_images else []
+            elif isinstance(raw_images, list):
+                images = [img for img in raw_images if isinstance(img, str) and img]
+            else:
+                images = []
+
+            return {"price": price, "images": images}
+    except Exception:
+        pass
+
+    return {"price": "N/A", "images": []}
+
+# ==========================================
 # ADVANCED NORMALIZATION & SEARCH LOGIC
 # ==========================================
 
 def normalize_text(text):
     """
     Comprehensive text cleaner for Arabic & English:
+    - Removes question mark sequences (????) and unreadable non-printable tokens
     - Removes Tashkeel/Diacritics
     - Normalizes Arabic letters (أ/إ/آ -> ا, ة -> ه, ى -> ي)
     - Strips special symbols/punctuation (; & : - / ?)
@@ -236,6 +281,9 @@ def normalize_text(text):
     """
     if not isinstance(text, str):
         return ""
+
+    # Ignore/remove sequences of question marks resulting from encoding issues (e.g., Arabic ????)
+    text = re.sub(r'\?+', ' ', text)
 
     # 1. Remove Tashkeel / Harakat
     tashkeel_regex = re.compile(r'[\u0617-\u061A\u064B-\u0652]')
@@ -271,7 +319,7 @@ def normalize_text(text):
     ]
 
     for word in words:
-        if word in stop_words:
+        if word in stop_words or word.startswith("?"):
             continue
         if re.search(r'[a-z]', word):
             for rule, replacement in transliteration_rules:
@@ -295,6 +343,8 @@ def search_books(query, threshold=60):
         return pd.DataFrame()
 
     query_norm = normalize_text(query)
+    if not query_norm:
+        return pd.DataFrame()
 
     results = []
     for _, row in df.iterrows():
@@ -365,14 +415,21 @@ with tab_search:
                 publisher_val = book.get("publisher") or "Unknown Publisher"
                 category_val = book.get("category") or "General"
                 shelf_val = book.get("shelf") or "Unassigned"
+                isbn_val = book.get("isbn") or ""
                 score_val = int(book.get("match_score", 0))
+
+                # Fetch price and image assets via secrets.toml REST API endpoint
+                api_details = fetch_api_book_details(title_val, isbn_val)
+                price_val = api_details.get("price", "N/A")
+                image_list = api_details.get("images", [])
 
                 st.markdown(f"""
                     <div class="book-card">
                         <div class="book-title">📖 {title_val}</div>
                         <div class="book-meta">
                             <strong>Author:</strong> {author_val} &nbsp;|&nbsp; 
-                            <strong>Publisher:</strong> {publisher_val}
+                            <strong>Publisher:</strong> {publisher_val} &nbsp;|&nbsp; 
+                            <strong>Price:</strong> {price_val}
                         </div>
                         <div class="badge-container">
                             <span class="badge badge-category">📂 Category: {category_val}</span>
@@ -381,6 +438,15 @@ with tab_search:
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
+
+                # Render multiple images dynamically if returned by API
+                if image_list:
+                    st.caption("📸 **Book Cover / Images:**")
+                    cols = st.columns(min(len(image_list), 4))
+                    for idx, img_url in enumerate(image_list):
+                        col_target = cols[idx % len(cols)]
+                        col_target.image(img_url, use_column_width=True)
+
         else:
             st.warning("No matching books found. Try broadening your query or adjusting the sensitivity slider.")
     else:
